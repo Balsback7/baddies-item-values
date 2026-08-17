@@ -1,0 +1,11 @@
+{
+  "name": "baddies-item-values",
+  "version": "1.0.0",
+  "description": "Automated Baddies item value tracker",
+  "scripts": {
+    "fetch": "node fetch-items.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
