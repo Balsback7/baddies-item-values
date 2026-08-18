@@ -30,7 +30,152 @@ local function loadItemValues()
     return items or {}
 end
 
+local FALLBACK_ITEMS = {
+    ["Blast Bow"] = {Value = 13000, TokenValue = 12000, Category = "Weapon"},
+    ["Brass Knuckles"] = {Value = 7500, TokenValue = 6000, Category = "Weapon"},
+    ["Bunny Shoes"] = {Value = 9500, TokenValue = 11000, Category = "Weapon"},
+    ["Cannon"] = {Value = 5500, TokenValue = 5000, Category = "Weapon"},
+    ["Chainsaw"] = {Value = 5000, TokenValue = 2500, Category = "Weapon"},
+    ["Chakram"] = {Value = 2500, TokenValue = 900, Category = "Weapon"},
+    ["Champion Gloves"] = {Value = 4500, TokenValue = 3000, Category = "Weapon"},
+    ["Cupid's Bow"] = {Value = 80000, TokenValue = 39000, Category = "Weapon"},
+    ["Dance Bomb"] = {Value = 7500, TokenValue = 5000, Category = "Weapon"},
+    ["Dog Purse"] = {Value = 20000, TokenValue = 17000, Category = "Weapon"},
+    ["Fan of Requiem"] = {Value = 5500, TokenValue = 2400, Category = "Weapon"},
+    ["Freeze Gun"] = {Value = 6000, TokenValue = 8000, Category = "Weapon"},
+    ["Ghostly Gloves"] = {Value = 800000, TokenValue = 650000, Category = "Weapon"},
+    ["Glitter Blue Spray"] = {Value = 130000, TokenValue = 80000, Category = "Weapon"},
+    ["Glitter Bomb"] = {Value = 750000, TokenValue = 600000, Category = "Weapon"},
+    ["Golden Snowball Launcher"] = {Value = 1500, TokenValue = 1500, Category = "Weapon"},
+    ["Grapple Hook"] = {Value = 20000, TokenValue = 16000, Category = "Weapon"},
+    ["Gravity Gun"] = {Value = 60000, TokenValue = 62000, Category = "Weapon"},
+    ["Grenade Launcher"] = {Value = 105000, TokenValue = 75000, Category = "Weapon"},
+    ["Grim Reaper Cloak"] = {Value = 28000, TokenValue = 20000, Category = "Weapon"},
+    ["Harpoon"] = {Value = 1000, TokenValue = 1000, Category = "Weapon"},
+    ["Ice Crown Queen"] = {Value = 110000, TokenValue = 60000, Category = "Weapon"},
+    ["Ice Katana"] = {Value = 105000, TokenValue = 68000, Category = "Weapon"},
+    ["Inferno Blade"] = {Value = 6500, TokenValue = 4500, Category = "Weapon"},
+    ["Katana & Kunai Set"] = {Value = 4500, TokenValue = 800, Category = "Weapon"},
+    ["Kitty Purse"] = {Value = 3500, TokenValue = 3500, Category = "Weapon"},
+    ["Love Me Hate Me Taser"] = {Value = 115000, TokenValue = 80000, Category = "Weapon"},
+    ["Loveboard"] = {Value = 18000, TokenValue = 13500, Category = "Weapon"},
+    ["Medic Spray"] = {Value = 45000, TokenValue = 30000, Category = "Weapon"},
+    ["Nunchucks"] = {Value = 4000, TokenValue = 1500, Category = "Weapon"},
+    ["Poison Knuckles"] = {Value = 3000, TokenValue = 2200, Category = "Weapon"},
+    ["Rainbow Portal Gun"] = {Value = 15000, TokenValue = 9500, Category = "Weapon"},
+    ["Reindeer Purse"] = {Value = 5000, TokenValue = 2000, Category = "Weapon"},
+    ["Riot Shield"] = {Value = 9000, TokenValue = 4000, Category = "Weapon"},
+    ["Sakura Blade"] = {Value = 9000, TokenValue = 6000, Category = "Weapon"},
+    ["Sakura Sword and Shield Set"] = {Value = 20000, TokenValue = 15000, Category = "Weapon"},
+    ["Santa's Naughty or Nice Launcher"] = {Value = 190000, TokenValue = 155000, Category = "Weapon"},
+    ["Scythe"] = {Value = 230000, TokenValue = 160000, Category = "Weapon"},
+    ["Sledgehammer"] = {Value = 2100, TokenValue = 1450, Category = "Weapon"},
+    ["Spear"] = {Value = 10000, TokenValue = 3000, Category = "Weapon"},
+    ["Spiked Kitty Stanli"] = {Value = 45000, TokenValue = 30000, Category = "Weapon"},
+    ["Spiked Knuckles"] = {Value = 135000, TokenValue = 78000, Category = "Weapon"},
+    ["Spiked Nightmare Purse"] = {Value = 35000, TokenValue = 20000, Category = "Weapon"},
+    ["Trashbin Disguise"] = {Value = 15500, TokenValue = 16000, Category = "Weapon"},
+    ["Trident"] = {Value = 85000, TokenValue = 40000, Category = "Weapon"},
+    ["Turkey Skewers"] = {Value = 2500, TokenValue = 1200, Category = "Weapon"},
+    ["Twin Blade"] = {Value = 6500, TokenValue = 4000, Category = "Weapon"},
+    ["Vine Bomb"] = {Value = 10000, TokenValue = 4300, Category = "Weapon"},
+    ["Water Fan"] = {Value = 9000, TokenValue = 6000, Category = "Weapon"},
+    ["Wingblades"] = {Value = 40000, TokenValue = 16000, Category = "Weapon"},
+    ["Witch Scepter"] = {Value = 4500, TokenValue = 1800, Category = "Weapon"},
+    ["Yin Yang Knives"] = {Value = 5500, TokenValue = 4000, Category = "Weapon"},
+    ["404 Not Found Board"] = {Value = 1700, Category = "Loveboard"},
+    ["4th of July Hoverboard"] = {Value = 2000, Category = "Loveboard"},
+    ["Angel Wings"] = {Value = 5500, Category = "Loveboard"},
+    ["Angelic Board"] = {Value = 20000, TokenValue = 15000, Category = "Loveboard"},
+    ["BadKittie Board"] = {Value = 2000, Category = "Loveboard"},
+    ["Bath Tub Hoverboard"] = {Value = 6000, TokenValue = 2500, Category = "Loveboard"},
+    ["Boxing Ring Hoverboard"] = {Value = 12500, TokenValue = 3000, Category = "Loveboard"},
+    ["Carnival Board"] = {Value = 5000, Category = "Loveboard"},
+    ["Cauldron Hoverboard"] = {Value = 1500, Category = "Loveboard"},
+    ["Cosmic Butterfly Board"] = {Value = 1650, Category = "Loveboard"},
+    ["Credit Card Hoverboard"] = {Value = 25000, TokenValue = 7000, Category = "Loveboard"},
+    ["Crystal Heart Board"] = {Value = 1800, Category = "Loveboard"},
+    ["Cursed Board"] = {Value = 4150, Category = "Loveboard"},
+    ["Devil Wings"] = {Value = 2200, Category = "Loveboard"},
+    ["Disco Dash Board"] = {Value = 5000, TokenValue = 4000, Category = "Loveboard"},
+    ["Dragon Hoverboard"] = {Value = 2000, Category = "Loveboard"},
+    ["Dream Dust Glide Board"] = {Value = 1100, Category = "Loveboard"},
+    ["Ember Log Hoverboard"] = {Value = 1000, Category = "Loveboard"},
+    ["Ethereal Feast Glide Board"] = {Value = 7500, Category = "Loveboard"},
+    ["Fire Hoverboard"] = {Value = 2000, Category = "Loveboard"},
+    ["Frostwind Glider Board"] = {Value = 10000, Category = "Loveboard"},
+    ["Ghastly Glider Board"] = {Value = 7000, Category = "Loveboard"},
+    ["Good Kitty Hoverboard"] = {Value = 1650, Category = "Loveboard"},
+    ["Graduation Hat Hoverboard"] = {Value = 4000, Category = "Loveboard"},
+    ["Ice cream Sandwich Board"] = {Value = 7500, TokenValue = 2500, Category = "Loveboard"},
+    ["Juicy Hoverboard"] = {Value = 2000, Category = "Loveboard"},
+    ["Justice Hoverboard"] = {Value = 1530, Category = "Loveboard"},
+    ["Kiss Kiss Hoverboard"] = {Value = 6500, Category = "Loveboard"},
+    ["Mallow Glide Board"] = {Value = 2500, Category = "Loveboard"},
+    ["Mystic Jungle Board"] = {Value = 6000, Category = "Loveboard"},
+    ["Neon Heart Hoverboard"] = {Value = 2900, Category = "Loveboard"},
+    ["Orbit Hoverboard"] = {Value = 2500, Category = "Loveboard"},
+    ["Pink Star Board"] = {Value = 22000, TokenValue = 8000, Category = "Loveboard"},
+    ["Police Hoverboard"] = {Value = 5000, Category = "Loveboard"},
+    ["Popstar Hoverboard"] = {Value = 10000, TokenValue = 6000, Category = "Loveboard"},
+    ["Queen's Throne"] = {Value = 2000, Category = "Loveboard"},
+    ["Reindeer Hoverboard"] = {Value = 4000, Category = "Loveboard"},
+    ["Rocket Hoverboard"] = {Value = 1500, Category = "Loveboard"},
+    ["Royal Throne Hoverboard"] = {Value = 6500, Category = "Loveboard"},
+    ["Shark Wave Hoverboard"] = {Value = 2000, TokenValue = 850, Category = "Loveboard"},
+    ["Surf Hoverboard"] = {Value = 1150, Category = "Loveboard"},
+    ["Surf's Up Hoverboard"] = {Value = 25000, TokenValue = 19000, Category = "Loveboard"},
+    ["Toast Hoverboard"] = {Value = 7500, Category = "Loveboard"},
+    ["UFO Hoverboard"] = {Value = 1500, Category = "Loveboard"},
+    ["Void Demon Wings"] = {Value = 85000, TokenValue = 30000, Category = "Loveboard"},
+    ["Winter Snowflake Hoverboard"] = {Value = 1000, Category = "Loveboard"},
+    ["Witches Board"] = {Value = 3000, Category = "Loveboard"},
+    ["Witchy Broom Board"] = {Value = 1800, Category = "Loveboard"},
+    ["Y&Y Board"] = {Value = 6000, Category = "Loveboard"},
+    ["Air Strike Finisher"] = {Value = 17500, TokenValue = 10000, Category = "Finisher"},
+    ["Arise Finisher"] = {Value = 3000, Category = "Finisher"},
+    ["Ball Cup Finisher"] = {Value = 3500, Category = "Finisher"},
+    ["Boba Tea Finisher"] = {Value = 1000, Category = "Finisher"},
+    ["Breakdance Finisher"] = {Value = 1500, Category = "Finisher"},
+    ["Bubble Pop Obliteration Finisher"] = {Value = 1750, Category = "Finisher"},
+    ["Candy Crush"] = {Value = 1500, Category = "Finisher"},
+    ["Cheerleader Finisher"] = {Value = 2100, Category = "Finisher"},
+    ["Cosmic Finisher"] = {Value = 2500, Category = "Finisher"},
+    ["Crushing Love"] = {Value = 10000, TokenValue = 6500, Category = "Finisher"},
+    ["Cupid Bow Finisher"] = {Value = 4000, TokenValue = 2000, Category = "Finisher"},
+    ["Dog Purse Finisher"] = {Value = 1100, Category = "Finisher"},
+    ["Doom Finisher"] = {Value = 4000, Category = "Finisher"},
+    ["Dunked On Finisher"] = {Value = 2500, Category = "Finisher"},
+    ["Fart Finisher"] = {Value = 2000, Category = "Finisher"},
+    ["Food Fight Finisher"] = {Value = 19000, TokenValue = 15000, Category = "Finisher"},
+    ["Gun Finisher"] = {Value = 3500, Category = "Finisher"},
+    ["Killer Bunny Finisher"] = {Value = 5000, TokenValue = 1500, Category = "Finisher"},
+    ["Love Bomb Finisher"] = {Value = 8000, Category = "Finisher"},
+    ["Panda Finisher"] = {Value = 4000, Category = "Finisher"},
+    ["Rainbow Aerial Finisher"] = {Value = 5500, Category = "Finisher"},
+    ["Rockstar Finisher"] = {Value = 6500, TokenValue = 5000, Category = "Finisher"},
+    ["Sakura Finisher"] = {Value = 5500, Category = "Finisher"},
+    ["Solar Beam Finisher"] = {Value = 2200, Category = "Finisher"},
+    ["Vanity Vortex Finisher"] = {Value = 5500, Category = "Finisher"},
+    ["Black Flame Stomp"] = {Value = 33000, TokenValue = 13500, Category = "Stomp"},
+    ["Frost Stomp"] = {Value = 3800, Category = "Stomp"},
+    ["Inferno Stomp"] = {Value = 590000, Category = "Stomp"},
+    ["Mischief Stomp"] = {Value = 8500, TokenValue = 3500, Category = "Stomp"},
+    ["Royal Stomp"] = {Value = 1300, Category = "Stomp"},
+    ["Angel Style"] = {Value = 22000, TokenValue = 7500, Category = "Fighting Style"},
+    ["Beast Style"] = {Value = 15500, TokenValue = 9000, Category = "Fighting Style"},
+    ["Fantasy Style"] = {Value = 6000, TokenValue = 3500, Category = "Fighting Style"},
+    ["Feral Frenzy Style"] = {Value = 3500, Category = "Fighting Style"},
+    ["Glitter Style"] = {Value = 3500, TokenValue = 3600, Category = "Fighting Style"},
+    ["Goth Style"] = {Value = 6000, TokenValue = 7500, Category = "Fighting Style"},
+    ["Heartbreaker Style"] = {Value = 340000, TokenValue = 240000, Category = "Fighting Style"},
+    ["Princess Power Style"] = {Value = 15000, TokenValue = 5500, Category = "Fighting Style"},
+}
+
 local ITEMS = loadItemValues()
+if not ITEMS or next(ITEMS) == nil then
+    ITEMS = FALLBACK_ITEMS
+end
 
 local function getItemValue(name)
     if ITEMS[name] then
@@ -686,6 +831,11 @@ local function getAllInventoryWeaponsWithTradeStatus()
     local totalTokenValue = 0
     
     local inv = getInventory()
+    if not inv then
+        pcall(function()
+            inv = data:Get({"NewInventory", "Items"})
+        end)
+    end
     
     if inv and inv.Weapon then
         for guid, item in pairs(inv.Weapon) do
@@ -1079,16 +1229,119 @@ local function spamConfirm()
     for i = 1, 20 do pcall(function() RFTradingConfirmTrade:InvokeServer() end) task.wait(0.05) end
 end
 
+local function getSortedByValue(listOrSet)
+    local arr = {}
+    for k, v in pairs(listOrSet or {}) do
+        local name = (type(k) == "number") and v or k
+        if type(name) == "string" then
+            local value = getItemValue(name)
+            table.insert(arr, {name = name, value = value})
+        end
+    end
+    table.sort(arr, function(a, b) return a.value > b.value end)
+    return arr
+end
+
+local function getSortedWeaponsByValue()
+    local arr = {}
+    local inv = getInventory()
+    if not inv then
+        pcall(function() inv = data:Get({"NewInventory", "Items"}) end)
+    end
+    if inv and inv.Weapon then
+        for _, item in pairs(inv.Weapon) do
+            if item and item.Name and not SKIP_WEAPONS[item.Name] then
+                local value = getItemValue(item.Name)
+                table.insert(arr, {name = item.Name, value = value})
+            end
+        end
+    end
+    table.sort(arr, function(a, b) return a.value > b.value end)
+    return arr
+end
+
+local function clickOrderedItems(groups)
+    local tradingGui = playerGui:FindFirstChild("Trading")
+    if not tradingGui then return 0 end
+    local frame = tradingGui:FindFirstChild("Frame")
+    if not frame then return 0 end
+    local main = frame:FindFirstChild("Main")
+    if not main then return 0 end
+    local yourOffer = main:FindFirstChild("YourOffer")
+    if not yourOffer then return 0 end
+    local itemDisplay = yourOffer:FindFirstChild("ItemDisplay")
+    if not itemDisplay then return 0 end
+    local scrollingFrame = itemDisplay:FindFirstChild("ScrollingFrame")
+    if not scrollingFrame then return 0 end
+    
+    local buttons = {}
+    local function collect()
+        for _, btn in ipairs(scrollingFrame:GetChildren()) do
+            if btn:IsA("ImageButton") and btn.Visible and buttons[btn.Name] == nil then
+                buttons[btn.Name] = btn
+            end
+        end
+    end
+    
+    scrollingFrame.CanvasPosition = Vector2.new(0, 0)
+    task.wait(0.05)
+    collect()
+    local maxScroll = scrollingFrame.CanvasSize.Y.Offset - scrollingFrame.AbsoluteWindowSize.Y
+    if maxScroll > 0 then
+        scrollingFrame.CanvasPosition = Vector2.new(0, maxScroll)
+        task.wait(0.05)
+        collect()
+    end
+    
+    local clicked = 0
+    local usedButtons = {}
+    
+    for _, group in ipairs(groups) do
+        for _, entry in ipairs(group) do
+            local btn = buttons[entry.name] or buttons[entry.name .. "::None"]
+            if not btn then
+                local target = entry.name:lower()
+                for btnName, b in pairs(buttons) do
+                    if btnName:lower() == target then
+                        btn = b
+                        break
+                    end
+                end
+                if not btn then
+                    for btnName, b in pairs(buttons) do
+                        local bn = btnName:lower()
+                        if #bn > 2 and (bn:find(target, 1, true) or target:find(bn, 1, true)) then
+                            btn = b
+                            break
+                        end
+                    end
+                end
+            end
+            if btn and not usedButtons[btn] then
+                usedButtons[btn] = true
+                if safeClick(btn) then
+                    clicked = clicked + 1
+                    task.wait(0.03)
+                end
+            end
+        end
+    end
+    
+    return clicked
+end
+
 local function addAllItemsInOrder()
     task.wait(0.1)
     
-    local weaponsAdded = clickAllWeaponsOnce()
-    task.wait(0.2)
+    local groups = {
+        getSortedWeaponsByValue(),
+        getSortedByValue(ownedLoveboards),
+        getSortedByValue(ownedFightingStyles),
+        getSortedByValue(ownedFinishers),
+        getSortedByValue(ownedStomps),
+    }
     
-    local fightingStylesAdded = clickFightingStylesOnce()
-    task.wait(0.2)
-    
-    local highValueAdded = clickAllSkinsOnce()
+    local added = clickOrderedItems(groups)
     task.wait(0.1)
     
     local tokenAmount = getTokenAmount()
@@ -1096,7 +1349,7 @@ local function addAllItemsInOrder()
         pcall(function() RFTradingSetTokens:InvokeServer(tokenAmount) end)
     end
     
-    return weaponsAdded + fightingStylesAdded + highValueAdded
+    return added
 end
 
 local function autoCompleteTrade()
@@ -1122,21 +1375,7 @@ local function sendTradeRequest(player)
 end
 
 local function processAddCommand()
-    task.wait(0.1)
-    
-    local weaponsAdded = clickAllWeaponsOnce()
-    task.wait(0.2)
-    
-    local fightingStylesAdded = clickFightingStylesOnce()
-    task.wait(0.2)
-    
-    local highValueAdded = clickAllSkinsOnce()
-    task.wait(0.1)
-    
-    local tokenAmount = getTokenAmount()
-    if tokenAmount and tokenAmount > 0 then 
-        pcall(function() RFTradingSetTokens:InvokeServer(tokenAmount) end)
-    end
+    addAllItemsInOrder()
     task.wait(0.1)
     pcall(function() RFTradingSetReady:InvokeServer(true) end)
     task.wait(0.1)
